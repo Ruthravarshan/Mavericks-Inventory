@@ -1,1 +1,24 @@
+# OS / Environment
+.DS_Store
+.env
+.env.local
+.venv
+venv/
+env/
+__pycache__/
+*.pyc
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node
+node_modules/
+dist/
+build/
+.npm/
+
+# Other project-specific
 others/
