@@ -1,0 +1,65 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mavericks
+      POSTGRES_PASSWORD: mavericks_dev_password
+      POSTGRES_DB: mavericks_inventory
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mavericks -d mavericks_inventory"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./src/backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgresql://mavericks:mavericks_dev_password@postgres:5432/mavericks_inventory
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-long-random-string}
+      FRONTEND_URL: http://localhost:5173
+      PORT: 8080
+      LOG_LEVEL: info
+      NODE_ENV: production
+      # Azure OpenAI
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-gpt-4o}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-02-01}
+      # Azure Blob Storage
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
+      AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-mavericks-uploads}
+      # Azure AI Search
+      AZURE_SEARCH_ENDPOINT: ${AZURE_SEARCH_ENDPOINT:-}
+      AZURE_SEARCH_KEY: ${AZURE_SEARCH_KEY:-}
+      AZURE_SEARCH_INDEX: ${AZURE_SEARCH_INDEX:-mavericks-stocks}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - upload_tmp:/tmp/uploads
+
+  frontend:
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  upload_tmp:

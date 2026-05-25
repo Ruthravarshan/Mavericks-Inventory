@@ -22,3 +22,32 @@ build/
 
 # Other project-specific
 others/
+
+# Environment files — never commit secrets
+.env
+.env.local
+.env.production
+
+# Build artifacts
+src/backend/dist/
+src/frontend/dist/
+
+# Upload temp files
+/tmp/uploads/
+src/backend/uploads/
+
+# Drizzle migrations (generated — commit if you want version control)
+src/backend/migrations/
+
+# Lock files (keep pnpm-lock, ignore npm)
+package-lock.json
+
+# Terraform — NEVER commit state or tfvars (contains secrets)
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/tfplan
+terraform/terraform.tfvars
+terraform/*.tfvars
+!terraform/terraform.tfvars.example

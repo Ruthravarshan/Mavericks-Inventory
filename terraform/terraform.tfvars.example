@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Copy this file to terraform.tfvars and fill in the values.
+# terraform.tfvars is in .gitignore — NEVER commit it.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Azure Account — get these by running: az account show
+# Run: az login --tenant Amigo178.onmicrosoft.com
+tenant_id       = "PASTE_YOUR_TENANT_ID_HERE"       # az account show --query tenantId -o tsv
+subscription_id = "PASTE_YOUR_SUBSCRIPTION_ID_HERE"  # az account show --query id -o tsv
+
+# Project settings
+project_name = "maverick"
+environment  = "prod"
+location     = "East US"
+
+# PostgreSQL — change the password to something strong
+postgres_admin_username = "mavericksadmin"
+postgres_admin_password = "MaverIck$DB#2026"    # Must have upper+lower+number+symbol
+postgres_db_name        = "mavericks_inventory"
+postgres_sku            = "B_Standard_B1ms"      # Cheapest burstable (~$15/month)
+postgres_storage_mb     = 32768                  # 32 GB minimum
+postgres_version        = "16"
+
+# App Service
+app_service_sku = "B1"    # ~$13/month. Use "F1" for free tier (no always-on)
+
+# Azure OpenAI
+openai_location      = "East US"    # Change if East US has no quota
+openai_model         = "gpt-4o"
+openai_model_version = "2024-05-13"
+openai_capacity      = 10           # 10K tokens/minute
+
+# Azure AI Search
+search_sku = "basic"    # ~$75/month. Use "free" if you only need 1 service total
+
+# JWT Secret — generate with: openssl rand -base64 48
+jwt_secret = "CHANGE_ME_use_openssl_rand_base64_48_to_generate"

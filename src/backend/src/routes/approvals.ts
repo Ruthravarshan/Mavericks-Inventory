@@ -1,0 +1,716 @@
+import { Router, Request, Response, NextFunction } from "express";
+import { z } from "zod";
+import { db } from "../db/index.js";
+import {
+  approvals,
+  distributions,
+  stocks,
+  stockLedger,
+  activity,
+  notifications,
+  users,
+} from "../db/schema/index.js";
+import { eq, and, inArray, sql } from "drizzle-orm";
+import { requireRole } from "../middleware/rbac.js";
+
+const router = Router();
+
+const L2_REQUIRED_CATEGORIES = ["Server"];
+const L2_REQUIRED_QTY_THRESHOLD = 50;
+
+function requiresL2(qty: number, category: string): boolean {
+  return qty > L2_REQUIRED_QTY_THRESHOLD || L2_REQUIRED_CATEGORIES.includes(category);
+}
+
+async function getStockForDistribution(stockId: number) {
+  const [stock] = await db
+    .select()
+    .from(stocks)
+    .where(eq(stocks.id, stockId))
+    .limit(1);
+  return stock;
+}
+
+async function notifySubmitter(
+  distributionId: number,
+  type: string,
+  title: string,
+  message: string
+) {
+  const [dist] = await db
+    .select({ createdBy: distributions.createdBy, transactionCode: distributions.transactionCode })
+    .from(distributions)
+    .where(eq(distributions.id, distributionId))
+    .limit(1);
+
+  if (dist) {
+    await db.insert(notifications).values({
+      userId: dist.createdBy,
+      type,
+      title,
+      message,
+      relatedEntityType: "distribution",
+      relatedEntityId: distributionId,
+    });
+  }
+}
+
+// ─── GET /approvals ───────────────────────────────────────────────────────────
+
+router.get(
+  "/",
+  requireRole("manager", "management_authority", "admin"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const statusFilter = req.query.status as string | undefined;
+      const page = Math.max(1, Number(req.query.page ?? 1));
+      const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 20)));
+      const offset = (page - 1) * limit;
+
+      const conditions = [];
+
+      if (statusFilter) {
+        conditions.push(
+          eq(
+            approvals.status,
+            statusFilter as "pending" | "l1_approved" | "approved" | "rejected"
+          )
+        );
+      }
+
+      const rows = await db
+        .select()
+        .from(approvals)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .limit(limit)
+        .offset(offset);
+
+      res.json({ data: rows, pagination: { page, limit, total: rows.length } });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ─── GET /approvals/:id ───────────────────────────────────────────────────────
+
+router.get(
+  "/:id",
+  requireRole("manager", "management_authority", "admin"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({ error_code: "INVALID_ID", message: "Invalid approval ID" });
+        return;
+      }
+
+      const [approval] = await db
+        .select()
+        .from(approvals)
+        .where(eq(approvals.id, id))
+        .limit(1);
+
+      if (!approval) {
+        res.status(404).json({ error_code: "NOT_FOUND", message: "Approval not found" });
+        return;
+      }
+
+      const [dist] = await db
+        .select()
+        .from(distributions)
+        .where(eq(distributions.id, approval.distributionId))
+        .limit(1);
+
+      const stock = dist ? await getStockForDistribution(dist.stockId) : null;
+
+      res.json({ ...approval, distribution: dist, stock });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ─── POST /approvals/:id/approve (L1) ────────────────────────────────────────
+
+router.post(
+  "/:id/approve",
+  requireRole("manager", "admin"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({ error_code: "INVALID_ID", message: "Invalid ID" });
+        return;
+      }
+
+      const remarks = (req.body.remarks as string) ?? "";
+
+      const [approval] = await db
+        .select()
+        .from(approvals)
+        .where(eq(approvals.id, id))
+        .limit(1);
+
+      if (!approval) {
+        res.status(404).json({ error_code: "NOT_FOUND", message: "Approval not found" });
+        return;
+      }
+
+      if (approval.status !== "pending") {
+        res.status(400).json({
+          error_code: "ALREADY_PROCESSED",
+          message: "This approval has already been processed",
+        });
+        return;
+      }
+
+      const [dist] = await db
+        .select()
+        .from(distributions)
+        .where(eq(distributions.id, approval.distributionId))
+        .limit(1);
+
+      if (!dist) {
+        res.status(404).json({ error_code: "DISTRIBUTION_NOT_FOUND", message: "Distribution not found" });
+        return;
+      }
+
+      const stock = await getStockForDistribution(dist.stockId);
+      if (!stock) {
+        res.status(404).json({ error_code: "STOCK_NOT_FOUND", message: "Stock not found" });
+        return;
+      }
+
+      const needsL2 = requiresL2(dist.qtyRequested, stock.category);
+
+      if (needsL2) {
+        // L1 approved, escalate to L2
+        await db.update(approvals).set({
+          status: "l1_approved",
+          remarks,
+          approvedBy: req.user!.id,
+          approvedAt: new Date(),
+          requiresL2: true,
+          updatedAt: new Date(),
+        }).where(eq(approvals.id, id));
+
+        await db.update(distributions).set({
+          status: "l2_pending",
+          updatedAt: new Date(),
+        }).where(eq(distributions.id, dist.id));
+
+        // Notify L2 authorities
+        const l2Users = await db.select({ id: users.id }).from(users).where(
+          and(eq(users.isActive, true), sql`role IN ('management_authority', 'admin')`)
+        );
+
+        if (l2Users.length > 0) {
+          await db.insert(notifications).values(
+            l2Users.map((u) => ({
+              userId: u.id,
+              type: "l2_approval_required",
+              title: "L2 Approval Required",
+              message: `Distribution ${dist.transactionCode} has been L1 approved and requires L2 sign-off.`,
+              relatedEntityType: "approval",
+              relatedEntityId: id,
+            }))
+          );
+        }
+
+        await db.insert(activity).values({
+          eventType: "approval_l1_approved",
+          description: `Approval ${id} (dist: ${dist.transactionCode}) L1 approved, escalated to L2`,
+          actor: req.user!.email,
+          entityType: "approval",
+          entityId: id,
+          ipAddress: req.ip,
+        });
+
+        res.json({ message: "L1 approved, escalated to L2", requiresL2: true });
+        return;
+      }
+
+      // Full approval — deduct stock
+      const newAvailable = stock.availableQuantity - dist.qtyRequested;
+      const newReserved = Math.max(0, stock.reservedQuantity - dist.qtyRequested);
+
+      await db.update(stocks).set({
+        availableQuantity: newAvailable,
+        reservedQuantity: newReserved,
+        healthScore: calcHealthScore(newAvailable, stock.minStockLevel),
+        updatedAt: new Date(),
+      }).where(eq(stocks.id, stock.id));
+
+      // Ledger OUT entry
+      await db.insert(stockLedger).values({
+        stockId: stock.id,
+        movementType: "out",
+        quantity: dist.qtyRequested,
+        runningBalance: newAvailable,
+        distributionId: dist.id,
+        performedBy: req.user!.name,
+        performedAt: new Date(),
+        source: "distribution_approval",
+        remarks: `Approved by ${req.user!.name}. Distribution: ${dist.transactionCode}`,
+      });
+
+      await db.update(approvals).set({
+        status: "approved",
+        remarks,
+        approvedBy: req.user!.id,
+        approvedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(approvals.id, id));
+
+      await db.update(distributions).set({
+        status: "approved",
+        updatedAt: new Date(),
+      }).where(eq(distributions.id, dist.id));
+
+      await notifySubmitter(dist.id, "distribution_approved", "Distribution Approved", `Your distribution ${dist.transactionCode} has been approved.`);
+
+      await db.insert(activity).values({
+        eventType: "distribution_approved",
+        description: `Distribution ${dist.transactionCode} approved by ${req.user!.name}`,
+        actor: req.user!.email,
+        entityType: "distribution",
+        entityId: dist.id,
+        ipAddress: req.ip,
+      });
+
+      res.json({ message: "Distribution approved successfully" });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ─── POST /approvals/:id/reject ───────────────────────────────────────────────
+
+router.post(
+  "/:id/reject",
+  requireRole("manager", "admin"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({ error_code: "INVALID_ID", message: "Invalid ID" });
+        return;
+      }
+
+      const remarks = (req.body.remarks as string) ?? "";
+
+      if (remarks.length < 20) {
+        res.status(400).json({
+          error_code: "REMARKS_TOO_SHORT",
+          message: "Rejection remarks must be at least 20 characters",
+        });
+        return;
+      }
+
+      const [approval] = await db
+        .select()
+        .from(approvals)
+        .where(eq(approvals.id, id))
+        .limit(1);
+
+      if (!approval) {
+        res.status(404).json({ error_code: "NOT_FOUND", message: "Approval not found" });
+        return;
+      }
+
+      if (approval.status !== "pending") {
+        res.status(400).json({
+          error_code: "ALREADY_PROCESSED",
+          message: "This approval has already been processed",
+        });
+        return;
+      }
+
+      const [dist] = await db
+        .select()
+        .from(distributions)
+        .where(eq(distributions.id, approval.distributionId))
+        .limit(1);
+
+      if (!dist) {
+        res.status(404).json({ error_code: "DISTRIBUTION_NOT_FOUND", message: "Distribution not found" });
+        return;
+      }
+
+      // Release reserved quantity
+      const [stock] = await db.select().from(stocks).where(eq(stocks.id, dist.stockId)).limit(1);
+      if (stock) {
+        await db.update(stocks).set({
+          reservedQuantity: Math.max(0, stock.reservedQuantity - dist.qtyRequested),
+          updatedAt: new Date(),
+        }).where(eq(stocks.id, stock.id));
+      }
+
+      await db.update(approvals).set({
+        status: "rejected",
+        remarks,
+        approvedBy: req.user!.id,
+        approvedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(approvals.id, id));
+
+      await db.update(distributions).set({
+        status: "rejected",
+        updatedAt: new Date(),
+      }).where(eq(distributions.id, dist.id));
+
+      await notifySubmitter(dist.id, "distribution_rejected", "Distribution Rejected", `Your distribution ${dist.transactionCode} was rejected. Reason: ${remarks}`);
+
+      await db.insert(activity).values({
+        eventType: "distribution_rejected",
+        description: `Distribution ${dist.transactionCode} rejected by ${req.user!.name}`,
+        actor: req.user!.email,
+        entityType: "distribution",
+        entityId: dist.id,
+        newValue: JSON.stringify({ remarks }),
+        ipAddress: req.ip,
+      });
+
+      res.json({ message: "Distribution rejected" });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ─── POST /approvals/:id/l2-approve ──────────────────────────────────────────
+
+router.post(
+  "/:id/l2-approve",
+  requireRole("management_authority", "admin"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({ error_code: "INVALID_ID", message: "Invalid ID" });
+        return;
+      }
+
+      const remarks = (req.body.remarks as string) ?? "";
+
+      const [approval] = await db
+        .select()
+        .from(approvals)
+        .where(eq(approvals.id, id))
+        .limit(1);
+
+      if (!approval) {
+        res.status(404).json({ error_code: "NOT_FOUND", message: "Approval not found" });
+        return;
+      }
+
+      if (!approval.requiresL2) {
+        res.status(400).json({
+          error_code: "L2_NOT_REQUIRED",
+          message: "L2 approval is not required for this distribution",
+        });
+        return;
+      }
+
+      if (approval.status !== "l1_approved") {
+        res.status(400).json({
+          error_code: "NOT_L1_APPROVED",
+          message: "Distribution must be L1 approved before L2 approval",
+        });
+        return;
+      }
+
+      const [dist] = await db
+        .select()
+        .from(distributions)
+        .where(eq(distributions.id, approval.distributionId))
+        .limit(1);
+
+      if (!dist) {
+        res.status(404).json({ error_code: "DISTRIBUTION_NOT_FOUND", message: "Distribution not found" });
+        return;
+      }
+
+      const stock = await getStockForDistribution(dist.stockId);
+      if (!stock) {
+        res.status(404).json({ error_code: "STOCK_NOT_FOUND", message: "Stock not found" });
+        return;
+      }
+
+      const newAvailable = stock.availableQuantity - dist.qtyRequested;
+      const newReserved = Math.max(0, stock.reservedQuantity - dist.qtyRequested);
+
+      await db.update(stocks).set({
+        availableQuantity: newAvailable,
+        reservedQuantity: newReserved,
+        healthScore: calcHealthScore(newAvailable, stock.minStockLevel),
+        updatedAt: new Date(),
+      }).where(eq(stocks.id, stock.id));
+
+      await db.insert(stockLedger).values({
+        stockId: stock.id,
+        movementType: "out",
+        quantity: dist.qtyRequested,
+        runningBalance: newAvailable,
+        distributionId: dist.id,
+        performedBy: req.user!.name,
+        performedAt: new Date(),
+        source: "l2_approval",
+        remarks: `L2 approved by ${req.user!.name}. Distribution: ${dist.transactionCode}`,
+      });
+
+      await db.update(approvals).set({
+        status: "approved",
+        l2Status: "approved",
+        l2ApprovedBy: req.user!.id,
+        l2ApprovedAt: new Date(),
+        l2Remarks: remarks,
+        updatedAt: new Date(),
+      }).where(eq(approvals.id, id));
+
+      await db.update(distributions).set({
+        status: "approved",
+        updatedAt: new Date(),
+      }).where(eq(distributions.id, dist.id));
+
+      await notifySubmitter(dist.id, "distribution_approved", "Distribution L2 Approved", `Your distribution ${dist.transactionCode} has been fully approved (L2).`);
+
+      await db.insert(activity).values({
+        eventType: "distribution_l2_approved",
+        description: `Distribution ${dist.transactionCode} L2 approved by ${req.user!.name}`,
+        actor: req.user!.email,
+        entityType: "distribution",
+        entityId: dist.id,
+        ipAddress: req.ip,
+      });
+
+      res.json({ message: "L2 approval granted" });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ─── POST /approvals/:id/l2-reject ────────────────────────────────────────────
+
+router.post(
+  "/:id/l2-reject",
+  requireRole("management_authority", "admin"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({ error_code: "INVALID_ID", message: "Invalid ID" });
+        return;
+      }
+
+      const remarks = (req.body.remarks as string) ?? "";
+
+      if (remarks.length < 10) {
+        res.status(400).json({
+          error_code: "REMARKS_TOO_SHORT",
+          message: "L2 rejection remarks must be at least 10 characters",
+        });
+        return;
+      }
+
+      const [approval] = await db
+        .select()
+        .from(approvals)
+        .where(eq(approvals.id, id))
+        .limit(1);
+
+      if (!approval) {
+        res.status(404).json({ error_code: "NOT_FOUND", message: "Approval not found" });
+        return;
+      }
+
+      if (approval.status !== "l1_approved") {
+        res.status(400).json({
+          error_code: "INVALID_STATE",
+          message: "L2 rejection only possible on l1_approved distributions",
+        });
+        return;
+      }
+
+      const [dist] = await db
+        .select()
+        .from(distributions)
+        .where(eq(distributions.id, approval.distributionId))
+        .limit(1);
+
+      if (!dist) {
+        res.status(404).json({ error_code: "DISTRIBUTION_NOT_FOUND", message: "Distribution not found" });
+        return;
+      }
+
+      const stock = await getStockForDistribution(dist.stockId);
+      if (stock) {
+        await db.update(stocks).set({
+          reservedQuantity: Math.max(0, stock.reservedQuantity - dist.qtyRequested),
+          updatedAt: new Date(),
+        }).where(eq(stocks.id, stock.id));
+      }
+
+      await db.update(approvals).set({
+        status: "rejected",
+        l2Status: "rejected",
+        l2ApprovedBy: req.user!.id,
+        l2ApprovedAt: new Date(),
+        l2Remarks: remarks,
+        updatedAt: new Date(),
+      }).where(eq(approvals.id, id));
+
+      await db.update(distributions).set({
+        status: "rejected",
+        updatedAt: new Date(),
+      }).where(eq(distributions.id, dist.id));
+
+      await notifySubmitter(dist.id, "distribution_rejected", "Distribution L2 Rejected", `Your distribution ${dist.transactionCode} was rejected at L2. Reason: ${remarks}`);
+
+      await db.insert(activity).values({
+        eventType: "distribution_l2_rejected",
+        description: `Distribution ${dist.transactionCode} L2 rejected by ${req.user!.name}`,
+        actor: req.user!.email,
+        entityType: "distribution",
+        entityId: dist.id,
+        newValue: JSON.stringify({ remarks }),
+        ipAddress: req.ip,
+      });
+
+      res.json({ message: "L2 rejection applied" });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ─── POST /approvals/bulk-approve ─────────────────────────────────────────────
+
+router.post(
+  "/bulk-approve",
+  requireRole("manager", "admin"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const idsSchema = z.object({ approvalIds: z.array(z.number().int().positive()) });
+      const parsed = idsSchema.safeParse(req.body);
+
+      if (!parsed.success) {
+        res.status(400).json({
+          error_code: "VALIDATION_ERROR",
+          message: "approvalIds must be an array of integers",
+        });
+        return;
+      }
+
+      const { approvalIds } = parsed.data;
+
+      const approvalsToProcess = await db
+        .select()
+        .from(approvals)
+        .where(
+          and(
+            inArray(approvals.id, approvalIds),
+            eq(approvals.status, "pending")
+          )
+        );
+
+      const processed: number[] = [];
+      const skipped: number[] = [];
+
+      for (const approval of approvalsToProcess) {
+        // Only bulk-approve low-risk
+        if (
+          approval.aiRiskLevel !== "Low" &&
+          approval.aiRiskLevel !== "low"
+        ) {
+          skipped.push(approval.id);
+          continue;
+        }
+
+        const [dist] = await db
+          .select()
+          .from(distributions)
+          .where(eq(distributions.id, approval.distributionId))
+          .limit(1);
+
+        if (!dist) {
+          skipped.push(approval.id);
+          continue;
+        }
+
+        const stock = await getStockForDistribution(dist.stockId);
+        if (!stock) {
+          skipped.push(approval.id);
+          continue;
+        }
+
+        const newAvailable = stock.availableQuantity - dist.qtyRequested;
+        const newReserved = Math.max(0, stock.reservedQuantity - dist.qtyRequested);
+
+        await db.update(stocks).set({
+          availableQuantity: newAvailable,
+          reservedQuantity: newReserved,
+          healthScore: calcHealthScore(newAvailable, stock.minStockLevel),
+          updatedAt: new Date(),
+        }).where(eq(stocks.id, stock.id));
+
+        await db.insert(stockLedger).values({
+          stockId: stock.id,
+          movementType: "out",
+          quantity: dist.qtyRequested,
+          runningBalance: newAvailable,
+          distributionId: dist.id,
+          performedBy: req.user!.name,
+          performedAt: new Date(),
+          source: "bulk_approval",
+          remarks: `Bulk approved by ${req.user!.name}`,
+        });
+
+        await db.update(approvals).set({
+          status: "approved",
+          approvedBy: req.user!.id,
+          approvedAt: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(approvals.id, approval.id));
+
+        await db.update(distributions).set({
+          status: "approved",
+          updatedAt: new Date(),
+        }).where(eq(distributions.id, dist.id));
+
+        await notifySubmitter(dist.id, "distribution_approved", "Distribution Approved (Bulk)", `Distribution ${dist.transactionCode} was bulk approved.`);
+
+        processed.push(approval.id);
+      }
+
+      await db.insert(activity).values({
+        eventType: "bulk_approval",
+        description: `Bulk approved ${processed.length} distributions by ${req.user!.name}`,
+        actor: req.user!.email,
+        entityType: "approval",
+        newValue: JSON.stringify({ processed, skipped }),
+        ipAddress: req.ip,
+      });
+
+      res.json({
+        processed,
+        skipped,
+        message: `Approved ${processed.length}, skipped ${skipped.length} (high/medium risk or already processed)`,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+function calcHealthScore(availableQuantity: number, minStockLevel: number): number {
+  if (minStockLevel <= 0) return 100;
+  if (availableQuantity >= minStockLevel * 1.5) return 85;
+  if (availableQuantity >= minStockLevel) return 60;
+  return 25;
+}
+
+export default router;
