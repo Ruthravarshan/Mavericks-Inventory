@@ -1,6 +1,6 @@
-# Exhaustive Manual Azure Setup & Configuration Guide
+# Exhaustive Manual Azure Setup Guide (Private VNet Architecture)
 
-Since you are bypassing Terraform and setting this up manually, this guide has been exhaustively expanded to include **every single toggle, configuration, firewall rule, and setting** defined in the original `main.tf` architecture. Nothing has been left out.
+This guide provides the exact specifications for creating a **fully private, secure dev environment** in Azure. All backend resources (Database, Storage, Key Vault, AI services) will have public access completely disabled and will only be accessible via Private Endpoints inside a Virtual Network (VNet). Your App Service will use VNet Integration to securely communicate with these resources.
 
 ---
 
@@ -9,176 +9,117 @@ Since you are bypassing Terraform and setting this up manually, this guide has b
 | Resource Type | Recommended Region | Exact Name to Use |
 | :--- | :--- | :--- |
 | **Resource Group** | `East US` | `rg-mavericks-inventory-dev` |
+| **Virtual Network** | `East US` | `vnet-mavericks-inventory-dev` |
 | **Key Vault** | `East US` | `kv-mavericks-inv-dev` |
 | **PostgreSQL Server** | `East US` | `psql-mavericks-inventory-dev` |
 | **PostgreSQL Database**| `East US` | `mavericks_inventory` |
 | **Azure OpenAI** | `East US` | `oai-mavericks-inventory-dev` |
 | **Storage Account** | `East US` | `stmavericksinvdev` *(Max 24 chars, no hyphens)* |
 | **AI Search** | `East US` | `srch-mavericks-inventory-dev` |
-| **Static Web App (UI)**| `East US 2` | `stapp-mavericks-inventory-dev-frontend` |
 | **App Service Plan** | `East US` | `asp-mavericks-inventory-dev` |
 | **Backend Web App** | `East US` | `app-mavericks-inventory-dev-api` |
+| **Static Web App (UI)**| `East US 2` | `stapp-mavericks-inventory-dev-frontend` |
 
 ---
 
-## 1. Resource Group & Key Vault
-*   **Resource Group Name**: `rg-mavericks-inventory-dev` (Location: East US)
-*   **Key Vault Name**: `kv-mavericks-inv-dev`
-    *   **Pricing tier**: Standard
-    *   **Soft-delete retention**: 7 days
-    *   **Purge protection**: Disable
-    *   **Access policy**: Ensure your user account has `Get, List, Set, Delete, Purge, Recover` permissions for Secrets.
+## 🏗️ REQUIRED CREATION ORDER
+
+To ensure Private Endpoints and DNS resolve correctly, you **MUST** create resources in this exact order:
+`Resource Group` → `VNet` → `Storage` → `Database` → `Key Vault` → `OpenAI` → `Search` → `App Service` → `Frontend`
 
 ---
 
-## 2. Azure Database for PostgreSQL (Flexible Server)
-*   **Resource Name**: `psql-mavericks-inventory-dev`
-*   **Version**: `16`
-*   **Workload type**: Development
-*   **Compute Tier**: `Burstable B1ms`
-*   **Storage**: `32 GB` (Auto-grow: Enabled)
-*   **Backup**: Retention 7 days (Geo-redundancy: Disabled)
-*   **Authentication**: PostgreSQL authentication only
-*   **Admin Username**: `mavericksadmin`
-*   **Admin Password**: `BsfXWNU1V1bk1MQ@`
-*   **Networking / Firewall (CRITICAL)**: 
-    *   Enable **Public access**.
-    *   Check the box: **"Allow public access from any Azure service within Azure to this server"** (This allows the Backend Web App to connect).
-    *   Click **+ Add current client IP address** (This allows your local machine to connect).
-*   **Post-Deployment step (The Database)**:
-    *   Navigate to **Databases** in the left menu.
-    *   Add a new database named **`mavericks_inventory`**
-    *   Collation: `en_US.utf8`
-    *   Charset: `utf8`
+## 1. Resource Group & Virtual Network (VNet)
+You must establish the networking foundation first.
+
+*   **Resource Group Name**: `rg-mavericks-inventory-dev`
+*   **Virtual Network Name**: `vnet-mavericks-inventory-dev`
+    *   **Address space**: `10.0.0.0/16`
+    *   **Subnet 1**: `snet-endpoints` (`10.0.1.0/24`) — Used for all Private Endpoints.
+    *   **Subnet 2**: `snet-appservice` (`10.0.2.0/24`) — Used exclusively for App Service VNet Integration. Delegate this subnet to `Microsoft.Web/serverFarms`.
 
 ---
 
-## 3. Azure OpenAI Service
-*   **Resource Name**: `oai-mavericks-inventory-dev`
-*   **Pricing Tier**: `Standard S0`
-*   **Custom subdomain**: `oai-mavericks-inventory-dev`
-*   **Post-Deployment step (The Model)**:
-    *   Go to Azure OpenAI Studio -> Deployments -> Create new deployment.
-    *   **Model name**: `gpt-4o`
-    *   **Model version**: `2024-08-06`
-    *   **Deployment name**: `gpt-4o`
-    *   **Capacity (Tokens per minute)**: Set to your desired limit (e.g., 10K or 50K depending on quota).
-
----
-
-## 4. Azure Storage Account
+## 2. Azure Storage Account (Private)
 *   **Resource Name**: `stmavericksinvdev`
-*   **Performance / Redundancy**: `Standard` / `Locally-redundant storage (LRS)`
 *   **Security Settings**:
-    *   Minimum TLS version: `Version 1.2`
-    *   Allow cross-tenant replication: `False` (if asked)
-    *   Allow Blob public access: `False` (Disable anonymous access)
-    *   Blob soft delete: Enable, set to `7 days`
-*   **Post-Deployment step (Containers)**:
-    *   Go to **Data storage** -> **Containers** and create exactly three private containers:
-    *   `mavericks-uploads` (Access level: Private)
-    *   `mavericks-templates` (Access level: Private)
-    *   `mavericks-reports` (Access level: Private)
+    *   Enable **Disable public access and use private access**.
+    *   Create a **Private Endpoint** mapped to the `snet-endpoints` subnet.
+    *   Target sub-resource: `blob`.
+    *   Integrate with Private DNS Zone: `privatelink.blob.core.windows.net`.
+*   **Containers**: Create three private containers: `mavericks-uploads`, `mavericks-templates`, `mavericks-reports`.
 
 ---
 
-## 5. Azure AI Search
+## 3. Azure Database for PostgreSQL (Private)
+*   **Resource Name**: `psql-mavericks-inventory-dev`
+*   **Compute Tier**: `Burstable B1ms`
+*   **Credentials**: 
+    *   Admin Username: `mavericksadmin`
+    *   Admin Password: `BsfXWNU1V1bk1MQ@` *(Note: URL-encode the `@` to `%40` in your connection string)*
+*   **Networking / Firewall (CRITICAL)**: 
+    *   **Disable** Public access completely.
+    *   Set up a **Private Endpoint** mapped to the `snet-endpoints` subnet.
+    *   Integrate with Private DNS Zone: `privatelink.postgres.database.azure.com`.
+*   **Database**: Add a new database named **`mavericks_inventory`**.
+
+---
+
+## 4. Azure Key Vault (Private)
+*   **Resource Name**: `kv-mavericks-inv-dev`
+*   **Networking**: 
+    *   **Disable public access**.
+    *   Create a **Private Endpoint** in `snet-endpoints`.
+    *   Integrate with Private DNS Zone: `privatelink.vaultcore.azure.net`.
+*   **Access Policy**: Use **Azure Role-Based Access Control (RBAC)**. You will grant your App Service's Managed Identity access to this later.
+
+---
+
+## 5. Azure OpenAI Service (Private)
+*   **Resource Name**: `oai-mavericks-inventory-dev`
+*   **Networking**:
+    *   Select **Selected Networks and Private Endpoints** or Disable public access.
+    *   Create a **Private Endpoint** in `snet-endpoints`.
+    *   Integrate with Private DNS Zone: `privatelink.openai.azure.com`.
+*   **Model**: Deploy `gpt-4o` (or `gpt-4o-mini`).
+
+---
+
+## 6. Azure AI Search (Private)
 *   **Resource Name**: `srch-mavericks-inventory-dev`
-*   **Pricing Tier**: `Basic` (or Free if available)
-*   **Scale**: Replicas: 1, Partitions: 1
-*   **Security**: Ensure `Public network access` is Enabled and `Role-based access control (RBAC)` is set to Both or API Keys (Local authentication enabled).
-
----
-
-## 6. Frontend Static Web App
-*   **Resource Name**: `stapp-mavericks-inventory-dev-frontend`
-*   **Region**: `East US 2`
-*   **Pricing Tier**: `Free`
+*   **Networking**:
+    *   Endpoint connectivity: **Private**.
+    *   Create a **Private Endpoint** in `snet-endpoints`.
+    *   Integrate with Private DNS Zone: `privatelink.search.windows.net`.
 
 ---
 
 ## 7. App Service Plan & Backend Web App
-*   **App Service Plan Name**: `asp-mavericks-inventory-dev`
-*   **Operating System**: Linux
-*   **Pricing Tier**: `Basic B1`
-*   **Backend Web App Name**: `app-mavericks-inventory-dev-api`
-*   **Runtime Stack**: `Node 20 LTS`
-*   **Configuration Settings (CRITICAL for the backend to run)**:
-    *   Go to **Settings** -> **Configuration** -> **General settings**.
-    *   **HTTPS Only**: `On`
-    *   **Always On**: `On`
-    *   **HTTP version**: `2.0`
-    *   **Startup Command**: `node dist/index.js`
-*   **CORS (Cross-Origin Resource Sharing)**:
-    *   Go to **API** -> **CORS**.
-    *   Add your Frontend URL (from Step 6) to the allowed origins.
-    *   Check the box for **Enable Access-Control-Allow-Credentials**.
-*   **App Service Logs**:
-    *   Go to **App Service logs**.
-    *   Enable **Application Logging (Filesystem)** to `Information` level.
-    *   Enable **Web server logging** (Quota: 35 MB, Retention: 7 days).
+*   **App Service Plan**: `asp-mavericks-inventory-dev` (Linux, Basic B1).
+*   **Backend Web App Name**: `app-mavericks-inventory-dev-api` (Node 24).
+*   **Networking (CRITICAL)**:
+    *   Go to **Networking** -> **VNet integration**.
+    *   Enable VNet integration and select the `snet-appservice` subnet you created earlier. Ensure **Route All** is enabled so all outbound traffic flows through the VNet.
+*   **Identity (Managed Identity)**:
+    *   Go to **Identity** -> **System assigned** and turn it **On**.
+    *   *Now go back to your Key Vault, click Access Control (IAM), and assign the "Key Vault Secrets User" role to this Managed Identity.*
+*   **Configuration & Secrets (App Settings)**:
+    *   Instead of relying purely on `.env`, go to **Settings** -> **Environment variables** in the App Service and add your configurations here.
+    *   Store sensitive values (like `AZURE_OPENAI_KEY` or `DATABASE_URL`) in Key Vault and reference them in App Settings using the syntax: `@Microsoft.KeyVault(VaultName=kv-mavericks-inv-dev;SecretName=database-url)`.
+*   **CORS**: Allow your exact Frontend URL (e.g., `https://stapp-mavericks-inventory-dev-frontend.azurestaticapps.net`).
+*   **Startup**: `node dist/index.js` (Always On: True).
 
 ---
 
-## 8. How to retrieve keys and setup your `.env` File
+## 8. Frontend Static Web App (Public Ingress)
+*   **Resource Name**: `stapp-mavericks-inventory-dev-frontend`
+*   **Region**: `East US 2`
+*   *Note: Static Web Apps cannot be fully private in the Free tier. It will act as the public-facing UI that securely talks to your App Service API, which in turn securely talks to your private backend resources.*
 
-Once all the resources are created, you need to extract specific keys and URLs from the Azure Portal to connect your local code to the cloud resources. Create a file named `.env` in your `src/backend/` folder and use the instructions below to fill in the missing values.
+---
 
-### Step-by-Step Retrieval Guide:
-
-**1. `FRONTEND_URL`**
-*   Go to your Static Web App (`stapp-mavericks-inventory-dev-frontend`) in the Azure Portal.
-*   On the **Overview** page, look for the **URL** on the right side.
-*   Copy it (e.g., `https://gentle-bush-12345.azurestaticapps.net`).
-
-**2. `AZURE_OPENAI_ENDPOINT` & `AZURE_OPENAI_KEY`**
-*   Go to your Azure OpenAI resource (`oai-mavericks-inventory-dev`).
-*   In the left menu under **Resource Management**, click on **Keys and Endpoint**.
-*   Copy **KEY 1** (paste it for `AZURE_OPENAI_KEY`).
-*   Copy the **Endpoint** (paste it for `AZURE_OPENAI_ENDPOINT`).
-
-**3. `AZURE_STORAGE_CONNECTION_STRING`**
-*   Go to your Storage Account (`stmavericksinvdev`).
-*   In the left menu under **Security + networking**, click on **Access keys**.
-*   Click the **Show** button next to `key1` **Connection string**.
-*   Copy the entire connection string.
-
-**4. `AZURE_SEARCH_ENDPOINT` & `AZURE_SEARCH_KEY`**
-*   Go to your AI Search service (`srch-mavericks-inventory-dev`).
-*   On the **Overview** page, copy the **Url** (paste it for `AZURE_SEARCH_ENDPOINT`).
-*   In the left menu under **Settings**, click on **Keys**.
-*   Copy the **Primary admin key** (paste it for `AZURE_SEARCH_KEY`).
-
-### Your `.env` File Template:
-
-Copy and paste this into `src/backend/.env`, replacing the `<PLACEHOLDERS>` with the values you just retrieved:
-
-```env
-# ─── DATABASE & APP CONFIG ──────────────────────────────────────────────
-DATABASE_URL=postgresql://mavericksadmin:BsfXWNU1V1bk1MQ@@psql-mavericks-inventory-dev.postgres.database.azure.com:5432/mavericks_inventory?sslmode=require
-JWT_SECRET=IxFVLtcBRAf67diFzM5QbhXK2CNCtUuh2PGKgD07ukF36_q1b29VTyXHrDR3fDqT
-PORT=8080
-LOG_LEVEL=info
-NODE_ENV=development
-
-# Paste the URL from Step 1
-FRONTEND_URL=<YOUR_STATIC_WEB_APP_URL>
-
-# ─── AZURE OPENAI ───────────────────────────────────────────────────────
-# Paste the Endpoint and Key 1 from Step 2
-AZURE_OPENAI_ENDPOINT=<YOUR_OPENAI_ENDPOINT>
-AZURE_OPENAI_KEY=<YOUR_OPENAI_API_KEY>
-AZURE_OPENAI_DEPLOYMENT=gpt-4o
-AZURE_OPENAI_API_VERSION=2024-02-01
-
-# ─── AZURE BLOB STORAGE ─────────────────────────────────────────────────
-# Paste the Connection String from Step 3
-AZURE_STORAGE_CONNECTION_STRING=<YOUR_STORAGE_CONNECTION_STRING>
-AZURE_STORAGE_CONTAINER=mavericks-uploads
-
-# ─── AZURE AI SEARCH ────────────────────────────────────────────────────
-# Paste the Url and Primary admin key from Step 4
-AZURE_SEARCH_ENDPOINT=<YOUR_AI_SEARCH_ENDPOINT>
-AZURE_SEARCH_KEY=<YOUR_AI_SEARCH_KEY>
-AZURE_SEARCH_INDEX=mavericks-stocks
-```
+## Final Review
+Because you are using a fully private VNet architecture, your local machine will **not** be able to connect directly to the Database, Storage, or OpenAI endpoints to run migrations unless you either:
+1. Connect via a Point-to-Site VPN to the VNet.
+2. Deploy a Jumpbox (Bastion VM) inside the VNet.
+3. Temporarily whitelist your local IP on the specific resources during initial setup and seeding, then lock them back down to private endpoints only.
