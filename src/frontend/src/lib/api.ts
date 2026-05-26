@@ -5,7 +5,9 @@ const TOKEN_KEY = "mavericks_token";
 const USER_KEY = "mavericks_user";
 
 export function getStoredToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token || token === "undefined" || token === "null") return null;
+  return token;
 }
 
 export function setStoredToken(token: string): void {
@@ -20,6 +22,7 @@ export function clearStoredAuth(): void {
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
   headers: { "Content-Type": "application/json" },
+  withCredentials: true,
 });
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
@@ -30,14 +33,59 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config;
 });
 
+let isRefreshing = false;
+let pendingQueue: Array<{
+  resolve: (token: string) => void;
+  reject: (err: unknown) => void;
+}> = [];
+
+function flushQueue(err: unknown, token: string | null) {
+  pendingQueue.forEach(({ resolve, reject }) => (err ? reject(err) : resolve(token!)));
+  pendingQueue = [];
+}
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      clearStoredAuth();
-      window.location.href = "/login";
+  async (error) => {
+    const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
+    // Don't retry auth endpoints to avoid loops
+    if (
+      error.response?.status !== 401 ||
+      original._retry ||
+      original.url?.includes("/auth/")
+    ) {
+      return Promise.reject(error);
     }
-    return Promise.reject(error);
+
+    if (isRefreshing) {
+      return new Promise<string>((resolve, reject) => {
+        pendingQueue.push({ resolve, reject });
+      }).then((token) => {
+        if (original.headers) original.headers.Authorization = `Bearer ${token}`;
+        return api(original);
+      });
+    }
+
+    original._retry = true;
+    isRefreshing = true;
+
+    try {
+      const { data } = await api.post<{ accessToken: string }>("/auth/refresh");
+      const newToken = data.accessToken;
+      setStoredToken(newToken);
+      api.defaults.headers.common["Authorization"] = `Bearer ${newToken}`;
+      flushQueue(null, newToken);
+      if (original.headers) original.headers.Authorization = `Bearer ${newToken}`;
+      return api(original);
+    } catch (refreshErr) {
+      flushQueue(refreshErr, null);
+      clearStoredAuth();
+      window.location.replace("/login");
+      return Promise.reject(refreshErr);
+    } finally {
+      isRefreshing = false;
+    }
   }
 );
 
@@ -46,7 +94,7 @@ export default api;
 // ─── Auth ───────────────────────────────────────────────────────────────────
 export const authApi = {
   login: (email: string, password: string) =>
-    api.post<{ access_token: string; user: import("@/types").User }>("/auth/login", { email, password }),
+    api.post<{ accessToken: string; user: import("@/types").User }>("/auth/login", { email, password }),
   logout: () => api.post("/auth/logout"),
   me: () => api.get<import("@/types").User>("/auth/me"),
 };

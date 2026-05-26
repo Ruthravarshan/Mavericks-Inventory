@@ -2,7 +2,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 
 const JWT_SECRET = process.env.JWT_SECRET ?? "fallback-dev-secret-change-in-prod";
-const ACCESS_EXPIRY = "15m";
+const ACCESS_EXPIRY = "8h";
 const REFRESH_EXPIRY = "8h";
 
 export interface JwtPayload {

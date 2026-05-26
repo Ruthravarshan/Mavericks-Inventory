@@ -116,21 +116,30 @@ router.get("/inventory-health", async (req: Request, res: Response, next: NextFu
         `${Number(anomalyStats.active)} anomalies require attention.`;
     }
 
+    const avgHealth = Math.round(Number(stockStats.avgHealth));
+    const criticalCount = Number(stockStats.critical);
+    const warningCount = Number(stockStats.warning);
+    const healthyCount = Number(stockStats.healthy);
+
+    const observations: string[] = [
+      `${healthyCount} stocks healthy, ${warningCount} warning, ${criticalCount} critical`,
+      `${Number(anomalyStats.active)} active anomalies (${Number(anomalyStats.critical)} critical)`,
+      ...criticalItems.map((s) => `${s.stockName} (${s.stockCode}) health: ${Math.round(s.healthScore)}/100 — ${s.availableQuantity} units vs min ${s.minStockLevel}`),
+    ];
+
+    const recommended_actions: string[] = [
+      ...(criticalCount > 0 ? [`Replenish ${criticalCount} critical stock item(s) immediately`] : []),
+      ...(warningCount > 0 ? [`Review ${warningCount} stock item(s) in warning state`] : []),
+      ...(Number(anomalyStats.critical) > 0 ? [`Resolve ${Number(anomalyStats.critical)} critical anomaly/anomalies`] : []),
+      ...(criticalCount === 0 && warningCount === 0 ? ["Inventory levels are within acceptable thresholds"] : []),
+    ];
+
     const result = {
-      narrative,
-      stats: {
-        totalStocks: Number(stockStats.total),
-        activeStocks: Number(stockStats.active),
-        totalUnits: Number(stockStats.totalUnits),
-        avgHealthScore: Math.round(Number(stockStats.avgHealth)),
-        healthy: Number(stockStats.healthy),
-        warning: Number(stockStats.warning),
-        critical: Number(stockStats.critical),
-        activeAnomalies: Number(anomalyStats.active),
-        criticalAnomalies: Number(anomalyStats.critical),
-      },
-      criticalItems,
-      generatedAt: new Date().toISOString(),
+      summary: narrative,
+      observations,
+      recommended_actions,
+      health_score: avgHealth,
+      last_refreshed: new Date().toISOString(),
     };
 
     cacheSet(cacheKey, result);
@@ -161,10 +170,11 @@ router.post("/query", async (req: Request, res: Response, next: NextFunction) =>
 
     if (!nlResult) {
       res.json({
-        success: false,
-        message: "Natural language query is unavailable. Please use the filters provided.",
-        fallback: true,
-        results: null,
+        query,
+        answer: "Natural language query is unavailable. Please use the search filters provided.",
+        data: [],
+        columns: [],
+        confidence: 0,
       });
       return;
     }
@@ -174,20 +184,22 @@ router.post("/query", async (req: Request, res: Response, next: NextFunction) =>
       logger.info({ sql: nlResult.sql }, "Executing NL-generated SQL");
       const result = await pool.query(nlResult.sql);
 
+      const columns = result.rows.length > 0 ? Object.keys(result.rows[0]) : [];
       res.json({
-        success: true,
         query,
-        sql: nlResult.sql,
-        explanation: nlResult.explanation,
-        results: result.rows,
-        rowCount: result.rowCount,
+        answer: nlResult.explanation ?? "Query executed successfully.",
+        data: result.rows,
+        columns,
+        confidence: 0.8,
       });
     } catch (queryErr) {
       logger.error({ queryErr, sql: nlResult.sql }, "NL SQL execution failed");
       res.status(400).json({
-        error_code: "QUERY_EXECUTION_ERROR",
-        message: "Generated query could not be executed",
-        explanation: nlResult.explanation,
+        query,
+        answer: `Query could not be executed: ${nlResult.explanation ?? "unknown error"}`,
+        data: [],
+        columns: [],
+        confidence: 0,
       });
     }
   } catch (err) {

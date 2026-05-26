@@ -53,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       const res = await authApi.login(email, password);
-      const { access_token, user: userData } = res.data;
+      const { accessToken: access_token, user: userData } = res.data;
       setStoredToken(access_token);
       localStorage.setItem(USER_KEY, JSON.stringify(userData));
       setAccessToken(access_token);

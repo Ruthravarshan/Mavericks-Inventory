@@ -1,18 +1,18 @@
 export const API_BASE_URL = "/api/v1";
 
 export const ROLES = {
-  ADMIN: "system_admin",
+  ADMIN: "admin",
   EXECUTIVE: "executive",
-  MANAGER: "management_l1",
+  MANAGER: "manager",
   L2: "management_authority",
 } as const;
 
 export type Role = (typeof ROLES)[keyof typeof ROLES];
 
 export const ROLE_LABELS: Record<string, string> = {
-  system_admin: "System Admin",
+  admin: "System Admin",
   executive: "Executive",
-  management_l1: "Manager L1",
+  manager: "Manager L1",
   management_authority: "L2 Authority",
 };
 

@@ -22,6 +22,8 @@ const router = Router();
 
 router.get("/summary", async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const userId = req.user!.id;
+
     // Total stocks
     const [stockStats] = await db
       .select({
@@ -39,70 +41,149 @@ router.get("/summary", async (req: Request, res: Response, next: NextFunction) =
     const [approvalStats] = await db
       .select({
         pending: sql<number>`COUNT(*) FILTER (WHERE status = 'pending')`,
-        l1Pending: sql<number>`COUNT(*) FILTER (WHERE status = 'pending')`,
         l2Pending: sql<number>`COUNT(*) FILTER (WHERE l2_status IS NULL AND status = 'l1_approved' AND requires_l2 = true)`,
       })
       .from(approvals);
 
-    // Active anomalies
+    // Active & critical anomalies
     const [anomalyStats] = await db
-      .select({ active: sql<number>`COUNT(*)` })
-      .from(anomalies)
-      .where(and(eq(anomalies.status, "active"), eq(anomalies.dismissed, false)));
+      .select({
+        active: sql<number>`COUNT(*) FILTER (WHERE dismissed = false AND status = 'active')`,
+        critical: sql<number>`COUNT(*) FILTER (WHERE dismissed = false AND severity = 'critical')`,
+      })
+      .from(anomalies);
 
-    // Distributions this month
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const [distStats] = await db
-      .select({ thisMonth: sql<number>`COUNT(*)` })
-      .from(distributions)
-      .where(gte(distributions.createdAt, monthStart));
 
-    // Automation rate: approved without manual flag (low-risk approved)
-    const [autoStats] = await db
+    // Total distributions
+    const [distTotal] = await db
+      .select({ total: sql<number>`COUNT(*)` })
+      .from(distributions);
+
+    // Per-user distribution stats
+    const [myStats] = await db
       .select({
         total: sql<number>`COUNT(*)`,
-        automated: sql<number>`COUNT(*) FILTER (WHERE ai_risk_level = 'Low' AND status = 'approved')`,
+        pending: sql<number>`COUNT(*) FILTER (WHERE status IN ('submitted','l1_pending','l2_pending'))`,
+        approved: sql<number>`COUNT(*) FILTER (WHERE status = 'approved')`,
+        rejected: sql<number>`COUNT(*) FILTER (WHERE status = 'rejected')`,
       })
-      .from(approvals);
+      .from(distributions)
+      .where(eq(distributions.createdBy, userId));
 
-    const automationRate =
-      Number(autoStats.total) > 0
-        ? Math.round((Number(autoStats.automated) / Number(autoStats.total)) * 100)
-        : 0;
+    // Approval velocity: average hours from submitted_at to approved (last 30 days)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [velocityStats] = await db
+      .select({
+        avg_hours: sql<number>`
+          COALESCE(
+            AVG(EXTRACT(EPOCH FROM (updated_at - submitted_at)) / 3600.0)
+            FILTER (WHERE status = 'approved' AND submitted_at IS NOT NULL AND updated_at >= ${thirtyDaysAgo}),
+            0
+          )
+        `,
+      })
+      .from(distributions);
+
+    // Distribution by status
+    const distByStatus = await db
+      .select({
+        status: distributions.status,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(distributions)
+      .groupBy(distributions.status);
+
+    // Top distributed items (by quantity distributed)
+    const topItems = await db
+      .select({
+        stock_name: sql<string>`s.stock_name`,
+        total_qty: sql<number>`SUM(d.qty_requested)`,
+      })
+      .from(sql`distributions d JOIN stocks s ON d.stock_id = s.id`)
+      .groupBy(sql`s.stock_name`)
+      .orderBy(sql`SUM(d.qty_requested) DESC`)
+      .limit(10);
+
+    // Transaction trend: distributions count per day for last 7 days
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const trend = await db
+      .select({
+        date: sql<string>`DATE(created_at)::text`,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(distributions)
+      .where(gte(distributions.createdAt, sevenDaysAgo))
+      .groupBy(sql`DATE(created_at)`)
+      .orderBy(sql`DATE(created_at)`);
 
     res.json({
       total_stocks: Number(stockStats.total),
       active_stocks: Number(stockStats.active),
       total_available_units: Number(stockStats.totalUnits),
+      total_distributions: Number(distTotal.total),
       pending_approvals: Number(approvalStats.pending) + Number(approvalStats.l2Pending),
-      active_anomalies: Number(anomalyStats.active),
-      healthy_stocks: Number(stockStats.healthy),
-      warning_stocks: Number(stockStats.warning),
-      critical_stocks: Number(stockStats.critical),
-      distributions_this_month: Number(distStats.thisMonth),
-      automation_rate: automationRate,
+      active_anomalies: Number(anomalyStats.active ?? 0),
+      critical_anomalies: Number(anomalyStats.critical ?? 0),
+      my_distributions: Number(myStats.total),
+      my_pending: Number(myStats.pending),
+      my_approved: Number(myStats.approved),
+      my_rejected: Number(myStats.rejected),
+      approval_velocity_hours: Number(Number(velocityStats.avg_hours).toFixed(1)),
+      stock_health_summary: {
+        healthy: Number(stockStats.healthy),
+        warning: Number(stockStats.warning),
+        critical: Number(stockStats.critical),
+      },
+      distribution_by_status: distByStatus.map((r) => ({
+        status: r.status,
+        count: Number(r.count),
+      })),
+      top_distributed_items: topItems.map((r) => ({
+        stock_name: r.stock_name,
+        total_qty: Number(r.total_qty),
+      })),
+      transaction_trend: trend.map((r) => ({
+        date: r.date,
+        count: Number(r.count),
+      })),
     });
   } catch (err) {
     next(err);
   }
 });
 
+
+
 // ─── GET /dashboard/activity ──────────────────────────────────────────────────
 
 router.get("/activity", async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 20)));
     const rows = await db
       .select()
       .from(activity)
-      .orderBy(desc(activity.timestamp))
-      .limit(20);
+      .orderBy(desc(activity.createdAt))
+      .limit(limit);
 
-    res.json({ data: rows });
+    // Map to match frontend Activity type shape
+    const mapped = rows.map((r) => ({
+      id: String(r.id),
+      event_type: r.eventType,
+      description: r.description,
+      actor_name: r.actor,
+      actor_role: "",
+      entity_type: r.entityType ?? "",
+      entity_id: String(r.entityId ?? ""),
+      entity_name: "",
+      created_at: (r.createdAt ?? r.timestamp).toISOString(),
+    }));
+
+    res.json(mapped);
   } catch (err) {
     next(err);
   }
 });
+
 
 // ─── GET /dashboard/health-scores ────────────────────────────────────────────
 

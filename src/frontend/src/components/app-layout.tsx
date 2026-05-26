@@ -50,7 +50,7 @@ export function AppLayout() {
       icon: CheckSquare,
       href: "/approvals",
       badge: pendingApprovals,
-      roles: ["system_admin", "management_l1", "management_authority"],
+      roles: ["admin", "manager", "management_authority"],
     },
     { label: "Stock Master", icon: Package, href: "/stocks" },
     { label: "Distributions", icon: ArrowRightLeft, href: "/distributions" },
@@ -66,19 +66,19 @@ export function AppLayout() {
       label: "Audit Log",
       icon: FileText,
       href: "/audit-log",
-      roles: ["system_admin", "management_l1"],
+      roles: ["admin", "manager"],
     },
     {
       label: "Bulk Upload",
       icon: Upload,
       href: "/upload",
-      roles: ["system_admin", "executive"],
+      roles: ["admin", "executive"],
     },
     {
       label: "Administration",
       icon: Settings,
       href: "/admin",
-      roles: ["system_admin"],
+      roles: ["admin"],
     },
   ];
 

@@ -1,7 +1,40 @@
+import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
 import { AppLayout } from "@/components/app-layout";
 import { Toaster } from "@/components/ui/toaster";
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex h-screen flex-col items-center justify-center gap-4 bg-slate-900 p-8 text-center">
+          <h1 className="text-2xl font-bold text-white">Something went wrong</h1>
+          <p className="text-sm text-slate-400">{this.state.error.message}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="rounded-lg bg-teal-600 px-4 py-2 text-sm text-white hover:bg-teal-500"
+          >
+            Reload page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // Pages
 import LoginPage from "@/pages/login";
@@ -20,8 +53,8 @@ import AdminPage from "@/pages/admin";
 import NotFoundPage from "@/pages/not-found";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, accessToken } = useAuth();
-  if (!user && !accessToken) {
+  const { accessToken } = useAuth();
+  if (!accessToken) {
     return <Navigate to="/login" replace />;
   }
   return <>{children}</>;
@@ -108,11 +141,13 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <AppRoutes />
-        <Toaster />
-      </BrowserRouter>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <BrowserRouter>
+          <AppRoutes />
+          <Toaster />
+        </BrowserRouter>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

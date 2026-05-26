@@ -14,47 +14,69 @@ import {
   ilike,
   or,
   desc,
-  asc,
   ne,
+  sql,
 } from "drizzle-orm";
 import { requireRole } from "../middleware/rbac.js";
 import { indexStockItem, deleteIndex } from "../lib/azure-search.js";
+import type { Stock as DBStock } from "../db/schema/stocks.js";
 
 const router = Router();
 
+// Accept snake_case from frontend, matching CreateStockRequest type
 const createStockSchema = z.object({
-  stockCode: z.string().min(1).max(50),
-  stockName: z.string().min(1).max(200),
+  stock_code: z.string().min(2).max(50),
+  name: z.string().min(2).max(200),
   category: z.string().min(1),
-  subCategory: z.string().optional(),
-  unitOfMeasure: z.string().min(1),
-  openingQuantity: z.number().min(0),
-  minStockLevel: z.number().min(0).default(0),
+  uom: z.string().min(1),
+  total_qty: z.coerce.number().min(0),
+  available_qty: z.coerce.number().min(0).optional(),
+  min_level: z.coerce.number().min(0).default(0),
+  max_level: z.coerce.number().min(0).default(0),
   location: z.string().optional(),
+  status: z.enum(["draft", "active", "inactive"]).default("draft"),
   description: z.string().optional(),
-  assetTagPrefix: z.string().optional(),
 });
 
 const updateStockSchema = z.object({
-  stockName: z.string().min(1).max(200).optional(),
-  category: z.string().min(1).optional(),
-  subCategory: z.string().optional(),
-  unitOfMeasure: z.string().min(1).optional(),
-  minStockLevel: z.number().min(0).optional(),
+  name: z.string().min(2).max(200).optional(),
+  category: z.string().optional(),
+  uom: z.string().optional(),
+  min_level: z.coerce.number().min(0).optional(),
+  max_level: z.coerce.number().min(0).optional(),
   location: z.string().optional(),
-  description: z.string().optional(),
-  assetTagPrefix: z.string().optional(),
   status: z.enum(["draft", "active", "inactive"]).optional(),
+  description: z.string().optional(),
 });
 
-function calcHealthScore(
-  availableQuantity: number,
-  minStockLevel: number
-): number {
+function calcHealthScore(availableQuantity: number, minStockLevel: number): number {
   if (minStockLevel <= 0) return 100;
   if (availableQuantity >= minStockLevel * 1.5) return 85;
   if (availableQuantity >= minStockLevel) return 60;
   return 25;
+}
+
+function toStockResponse(row: DBStock) {
+  const score = row.healthScore;
+  return {
+    id: String(row.id),
+    stock_code: row.stockCode,
+    name: row.stockName,
+    category: row.category,
+    uom: row.unitOfMeasure,
+    total_qty: row.openingQuantity,
+    available_qty: row.availableQuantity,
+    distributed_qty: Math.max(0, row.openingQuantity - row.availableQuantity),
+    min_level: row.minStockLevel,
+    max_level: 0,
+    location: row.location ?? "",
+    status: row.status,
+    health_score: score,
+    health_status: score >= 70 ? "healthy" : score >= 40 ? "warning" : "critical",
+    last_updated: (row.updatedAt ?? row.createdAt).toISOString(),
+    created_at: row.createdAt.toISOString(),
+    created_by: String(row.createdBy),
+  };
 }
 
 // ─── GET /stocks ──────────────────────────────────────────────────────────────
@@ -66,13 +88,13 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
     const status = req.query.status as string | undefined;
     const search = req.query.search as string | undefined;
     const page = Math.max(1, Number(req.query.page ?? 1));
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 20)));
-    const offset = (page - 1) * limit;
+    const page_size = Math.min(100, Math.max(1, Number(req.query.page_size ?? req.query.limit ?? 20)));
+    const offset = (page - 1) * page_size;
 
     const conditions = [isNull(stocks.deletedAt)];
 
     if (category) conditions.push(ilike(stocks.category, `%${category}%`));
-    if (location) conditions.push(ilike(stocks.location ?? stocks.stockName, `%${location}%`));
+    if (location) conditions.push(ilike(stocks.location, `%${location}%`));
     if (status) conditions.push(eq(stocks.status, status as "draft" | "active" | "inactive"));
     if (search) {
       conditions.push(
@@ -84,22 +106,52 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       );
     }
 
+    const [{ total }] = await db
+      .select({ total: sql<number>`COUNT(*)` })
+      .from(stocks)
+      .where(and(...conditions));
+
     const rows = await db
       .select()
       .from(stocks)
       .where(and(...conditions))
       .orderBy(desc(stocks.createdAt))
-      .limit(limit)
+      .limit(page_size)
       .offset(offset);
 
+    const totalNum = Number(total);
     res.json({
-      data: rows,
-      pagination: {
-        page,
-        limit,
-        total: rows.length,
-      },
+      items: rows.map(toStockResponse),
+      total: totalNum,
+      page,
+      page_size,
+      total_pages: Math.ceil(totalNum / page_size),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /stocks/export ───────────────────────────────────────────────────────
+
+router.get("/export", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rows = await db
+      .select()
+      .from(stocks)
+      .where(and(isNull(stocks.deletedAt), eq(stocks.status, "active")))
+      .orderBy(stocks.stockCode);
+
+    // Build CSV
+    const header = "Stock Code,Name,Category,UOM,Available Qty,Min Level,Location,Health Score,Status\n";
+    const csv = rows.map((r) =>
+      [r.stockCode, r.stockName, r.category, r.unitOfMeasure, r.availableQuantity,
+        r.minStockLevel, r.location ?? "", r.healthScore, r.status].join(",")
+    ).join("\n");
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="stocks-${Date.now()}.csv"`);
+    res.send(header + csv);
   } catch (err) {
     next(err);
   }
@@ -123,45 +175,42 @@ router.post(
       }
 
       const data = parsed.data;
-      const healthScore = calcHealthScore(data.openingQuantity, data.minStockLevel);
+      const openingQty = data.total_qty;
+      const availQty = data.available_qty ?? openingQty;
+      const healthScore = calcHealthScore(availQty, data.min_level);
 
       const [stock] = await db
         .insert(stocks)
         .values({
-          stockCode: data.stockCode.toUpperCase(),
-          stockName: data.stockName,
+          stockCode: data.stock_code.toUpperCase(),
+          stockName: data.name,
           category: data.category,
-          subCategory: data.subCategory,
-          unitOfMeasure: data.unitOfMeasure,
-          openingQuantity: data.openingQuantity,
-          availableQuantity: data.openingQuantity,
+          unitOfMeasure: data.uom,
+          openingQuantity: openingQty,
+          availableQuantity: availQty,
           reservedQuantity: 0,
-          minStockLevel: data.minStockLevel,
+          minStockLevel: data.min_level,
           location: data.location,
           description: data.description,
-          assetTagPrefix: data.assetTagPrefix,
-          status: "draft",
+          status: data.status,
           healthScore,
           createdBy: req.user!.id,
         })
         .returning();
 
-      // Opening ledger entry
       await db.insert(stockLedger).values({
         stockId: stock.id,
         movementType: "opening",
-        quantity: data.openingQuantity,
-        runningBalance: data.openingQuantity,
+        quantity: openingQty,
+        runningBalance: openingQty,
         performedBy: req.user!.name,
         performedAt: new Date(),
         source: "manual_entry",
         remarks: "Opening balance",
       });
 
-      // Index in Azure Search
       await indexStockItem(stock);
 
-      // Log activity
       await db.insert(activity).values({
         eventType: "stock_created",
         description: `Stock item "${stock.stockName}" (${stock.stockCode}) created`,
@@ -172,7 +221,7 @@ router.post(
         ipAddress: req.ip,
       });
 
-      res.status(201).json(stock);
+      res.status(201).json(toStockResponse(stock));
     } catch (err: unknown) {
       if ((err as NodeJS.ErrnoException & { code?: string }).code === "23505") {
         res.status(409).json({
@@ -207,15 +256,15 @@ router.get("/:id", async (req: Request, res: Response, next: NextFunction) => {
       return;
     }
 
-    res.json(stock);
+    res.json(toStockResponse(stock));
   } catch (err) {
     next(err);
   }
 });
 
-// ─── PATCH /stocks/:id ────────────────────────────────────────────────────────
+// ─── PUT /stocks/:id ──────────────────────────────────────────────────────────
 
-router.patch("/:id", async (req: Request, res: Response, next: NextFunction) => {
+router.put("/:id", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) {
@@ -252,14 +301,20 @@ router.patch("/:id", async (req: Request, res: Response, next: NextFunction) => 
       return;
     }
 
-    const updateData = parsed.data;
-    const newMinLevel = updateData.minStockLevel ?? existing.minStockLevel;
+    const { name, uom, min_level, ...rest } = parsed.data;
+    const newMinLevel = min_level ?? existing.minStockLevel;
     const newHealthScore = calcHealthScore(existing.availableQuantity, newMinLevel);
 
     const [updated] = await db
       .update(stocks)
       .set({
-        ...updateData,
+        ...(name ? { stockName: name } : {}),
+        ...(uom ? { unitOfMeasure: uom } : {}),
+        ...(min_level !== undefined ? { minStockLevel: min_level } : {}),
+        ...(rest.category ? { category: rest.category } : {}),
+        ...(rest.location !== undefined ? { location: rest.location } : {}),
+        ...(rest.status ? { status: rest.status } : {}),
+        ...(rest.description !== undefined ? { description: rest.description } : {}),
         healthScore: newHealthScore,
         updatedBy: req.user!.id,
         updatedAt: new Date(),
@@ -276,11 +331,11 @@ router.patch("/:id", async (req: Request, res: Response, next: NextFunction) => 
       entityType: "stock",
       entityId: updated.id,
       oldValue: JSON.stringify({ status: existing.status }),
-      newValue: JSON.stringify(updateData),
+      newValue: JSON.stringify(parsed.data),
       ipAddress: req.ip,
     });
 
-    res.json(updated);
+    res.json(toStockResponse(updated));
   } catch (err) {
     next(err);
   }
@@ -318,7 +373,6 @@ router.delete(
         return;
       }
 
-      // Check for distributions
       const [distCheck] = await db
         .select({ id: distributions.id })
         .from(distributions)

@@ -17,28 +17,30 @@ import {
   desc,
   ne,
   sql,
+  inArray,
 } from "drizzle-orm";
 import { analyzeRisk } from "../lib/azure-openai.js";
 
 const router = Router();
 
+// Accept snake_case from frontend, matching CreateDistributionRequest type
 const createDistributionSchema = z.object({
-  stockId: z.number().int().positive(),
-  qtyRequested: z.number().positive(),
-  distributionDate: z.string().min(1),
-  recipientType: z.enum(["employee", "project"]),
-  recipientId: z.string().min(1),
-  recipientName: z.string().min(1),
+  stock_id: z.coerce.number().int().positive(),
+  qty_requested: z.coerce.number().positive(),
+  distribution_date: z.string().min(1),
+  recipient_type: z.enum(["employee", "project"]),
+  recipient_id: z.string().min(1),
+  recipient_name: z.string().min(1),
   location: z.string().optional(),
   purpose: z.string().optional(),
 });
 
 const updateDistributionSchema = z.object({
-  qtyRequested: z.number().positive().optional(),
-  distributionDate: z.string().optional(),
-  recipientType: z.enum(["employee", "project"]).optional(),
-  recipientId: z.string().optional(),
-  recipientName: z.string().optional(),
+  qty_requested: z.coerce.number().positive().optional(),
+  distribution_date: z.string().optional(),
+  recipient_type: z.enum(["employee", "project"]).optional(),
+  recipient_id: z.string().optional(),
+  recipient_name: z.string().optional(),
   location: z.string().optional(),
   purpose: z.string().optional(),
 });
@@ -50,6 +52,47 @@ function generateTransactionCode(): string {
   return `TXN-${dateStr}-${random}`;
 }
 
+function deriveRiskLevel(score: string | null): "Low" | "Medium" | "High" {
+  const n = Number(score ?? 0);
+  if (n >= 70) return "High";
+  if (n >= 40) return "Medium";
+  return "Low";
+}
+
+function toDistributionResponse(
+  row: typeof distributions.$inferSelect,
+  stock: { stockCode: string; stockName: string; category: string; unitOfMeasure: string } | null,
+  createdByName?: string
+) {
+  return {
+    id: String(row.id),
+    transaction_code: row.transactionCode,
+    stock_id: String(row.stockId),
+    stock_code: stock?.stockCode ?? "",
+    stock_name: stock?.stockName ?? "",
+    stock_category: stock?.category ?? "",
+    qty_requested: row.qtyRequested,
+    qty_approved: row.status === "approved" ? row.qtyRequested : null,
+    uom: stock?.unitOfMeasure ?? "",
+    recipient_type: row.recipientType,
+    recipient_id: row.recipientId,
+    recipient_name: row.recipientName,
+    distribution_date: row.distributionDate,
+    location: row.location ?? "",
+    purpose: row.purpose ?? "",
+    status: row.status,
+    risk_score: Number(row.aiRiskScore ?? 0),
+    risk_level: deriveRiskLevel(row.aiRiskScore),
+    ai_recommendation: (row.aiRecommendation ?? "Review") as "Approve" | "Review" | "Reject",
+    ai_reasoning: row.aiReasoning ?? "",
+    submitted_at: row.submittedAt?.toISOString() ?? null,
+    created_at: row.createdAt.toISOString(),
+    created_by: String(row.createdBy),
+    created_by_name: createdByName ?? "",
+    approval_history: [],
+  };
+}
+
 // ─── GET /distributions ───────────────────────────────────────────────────────
 
 router.get("/", async (req: Request, res: Response, next: NextFunction) => {
@@ -58,32 +101,22 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
     const userId = req.user!.id;
 
     const statusFilter = req.query.status as string | undefined;
-    const stockIdFilter = req.query.stockId ? Number(req.query.stockId) : undefined;
-    const dateFrom = req.query.dateFrom as string | undefined;
-    const dateTo = req.query.dateTo as string | undefined;
+    const stockIdFilter = req.query.stock_id ? Number(req.query.stock_id) : undefined;
+    const dateFrom = req.query.date_from as string | undefined;
+    const dateTo = req.query.date_to as string | undefined;
     const page = Math.max(1, Number(req.query.page ?? 1));
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 20)));
-    const offset = (page - 1) * limit;
+    const page_size = Math.min(100, Math.max(1, Number(req.query.page_size ?? req.query.limit ?? 20)));
+    const offset = (page - 1) * page_size;
 
-    const conditions = [];
+    const conditions: ReturnType<typeof eq>[] = [];
 
-    // Role-scoped visibility
     if (role === "executive") {
       conditions.push(eq(distributions.createdBy, userId));
     }
 
     if (statusFilter) {
       conditions.push(
-        eq(
-          distributions.status,
-          statusFilter as
-            | "draft"
-            | "submitted"
-            | "l1_pending"
-            | "l2_pending"
-            | "approved"
-            | "rejected"
-        )
+        eq(distributions.status, statusFilter as "draft" | "submitted" | "l1_pending" | "l2_pending" | "approved" | "rejected")
       );
     }
 
@@ -99,15 +132,46 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       conditions.push(lte(distributions.createdAt, new Date(dateTo)));
     }
 
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [{ total }] = await db
+      .select({ total: sql<number>`COUNT(*)` })
+      .from(distributions)
+      .where(whereClause);
+
     const rows = await db
       .select()
       .from(distributions)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .where(whereClause)
       .orderBy(desc(distributions.createdAt))
-      .limit(limit)
+      .limit(page_size)
       .offset(offset);
 
-    res.json({ data: rows, pagination: { page, limit, total: rows.length } });
+    // Fetch associated stocks in one query
+    const stockIds = [...new Set(rows.map((r) => r.stockId))];
+    let stockMap: Record<number, { stockCode: string; stockName: string; category: string; unitOfMeasure: string }> = {};
+    if (stockIds.length > 0) {
+      const stockRows = await db
+        .select({
+          id: stocks.id,
+          stockCode: stocks.stockCode,
+          stockName: stocks.stockName,
+          category: stocks.category,
+          unitOfMeasure: stocks.unitOfMeasure,
+        })
+        .from(stocks)
+        .where(inArray(stocks.id, stockIds));
+      stockMap = Object.fromEntries(stockRows.map((s) => [s.id, s]));
+    }
+
+    const totalNum = Number(total);
+    res.json({
+      items: rows.map((r) => toDistributionResponse(r, stockMap[r.stockId] ?? null)),
+      total: totalNum,
+      page,
+      page_size,
+      total_pages: Math.ceil(totalNum / page_size),
+    });
   } catch (err) {
     next(err);
   }
@@ -132,7 +196,7 @@ router.post("/", async (req: Request, res: Response, next: NextFunction) => {
     const [stock] = await db
       .select()
       .from(stocks)
-      .where(and(eq(stocks.id, data.stockId)))
+      .where(eq(stocks.id, data.stock_id))
       .limit(1);
 
     if (!stock) {
@@ -149,10 +213,10 @@ router.post("/", async (req: Request, res: Response, next: NextFunction) => {
     }
 
     const availableUnreserved = stock.availableQuantity - stock.reservedQuantity;
-    if (data.qtyRequested > availableUnreserved) {
+    if (data.qty_requested > availableUnreserved) {
       res.status(400).json({
         error_code: "INSUFFICIENT_STOCK",
-        message: `Only ${availableUnreserved} units are available. Requested: ${data.qtyRequested}`,
+        message: `Only ${availableUnreserved} units are available. Requested: ${data.qty_requested}`,
       });
       return;
     }
@@ -161,12 +225,12 @@ router.post("/", async (req: Request, res: Response, next: NextFunction) => {
       .insert(distributions)
       .values({
         transactionCode: generateTransactionCode(),
-        stockId: data.stockId,
-        qtyRequested: data.qtyRequested,
-        distributionDate: data.distributionDate,
-        recipientType: data.recipientType,
-        recipientId: data.recipientId,
-        recipientName: data.recipientName,
+        stockId: data.stock_id,
+        qtyRequested: data.qty_requested,
+        distributionDate: data.distribution_date,
+        recipientType: data.recipient_type,
+        recipientId: data.recipient_id,
+        recipientName: data.recipient_name,
         location: data.location,
         purpose: data.purpose,
         status: "draft",
@@ -176,7 +240,7 @@ router.post("/", async (req: Request, res: Response, next: NextFunction) => {
 
     await db.insert(activity).values({
       eventType: "distribution_created",
-      description: `Distribution ${dist.transactionCode} created for ${data.qtyRequested} units of ${stock.stockName}`,
+      description: `Distribution ${dist.transactionCode} created for ${data.qty_requested} units of ${stock.stockName}`,
       actor: req.user!.email,
       entityType: "distribution",
       entityId: dist.id,
@@ -184,7 +248,7 @@ router.post("/", async (req: Request, res: Response, next: NextFunction) => {
       ipAddress: req.ip,
     });
 
-    res.status(201).json(dist);
+    res.status(201).json(toDistributionResponse(dist, stock));
   } catch (err) {
     next(err);
   }
@@ -211,7 +275,6 @@ router.get("/:id", async (req: Request, res: Response, next: NextFunction) => {
       return;
     }
 
-    // Role check for executive
     if (req.user!.role === "executive" && dist.createdBy !== req.user!.id) {
       res.status(403).json({ error_code: "FORBIDDEN", message: "Access denied" });
       return;
@@ -223,15 +286,15 @@ router.get("/:id", async (req: Request, res: Response, next: NextFunction) => {
       .where(eq(stocks.id, dist.stockId))
       .limit(1);
 
-    res.json({ ...dist, stock });
+    res.json(toDistributionResponse(dist, stock ?? null));
   } catch (err) {
     next(err);
   }
 });
 
-// ─── PATCH /distributions/:id ─────────────────────────────────────────────────
+// ─── PUT /distributions/:id ───────────────────────────────────────────────────
 
-router.patch("/:id", async (req: Request, res: Response, next: NextFunction) => {
+router.put("/:id", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) {
@@ -273,10 +336,18 @@ router.patch("/:id", async (req: Request, res: Response, next: NextFunction) => 
       return;
     }
 
+    const { qty_requested, distribution_date, recipient_type, recipient_id, recipient_name, ...rest } = parsed.data;
+
     const [updated] = await db
       .update(distributions)
       .set({
-        ...parsed.data,
+        ...(qty_requested !== undefined ? { qtyRequested: qty_requested } : {}),
+        ...(distribution_date ? { distributionDate: distribution_date } : {}),
+        ...(recipient_type ? { recipientType: recipient_type } : {}),
+        ...(recipient_id ? { recipientId: recipient_id } : {}),
+        ...(recipient_name ? { recipientName: recipient_name } : {}),
+        ...(rest.location !== undefined ? { location: rest.location } : {}),
+        ...(rest.purpose !== undefined ? { purpose: rest.purpose } : {}),
         updatedBy: req.user!.id,
         updatedAt: new Date(),
       })
@@ -292,7 +363,8 @@ router.patch("/:id", async (req: Request, res: Response, next: NextFunction) => 
       ipAddress: req.ip,
     });
 
-    res.json(updated);
+    const [stock] = await db.select().from(stocks).where(eq(stocks.id, updated.stockId)).limit(1);
+    res.json(toDistributionResponse(updated, stock ?? null));
   } catch (err) {
     next(err);
   }
@@ -383,7 +455,6 @@ router.post("/:id/submit", async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    // Race condition protection — re-check availability
     const [stock] = await db
       .select()
       .from(stocks)
@@ -404,12 +475,8 @@ router.post("/:id/submit", async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    // Get recipient history for AI
     const recipientHistory = await db
-      .select({
-        qtyRequested: distributions.qtyRequested,
-        status: distributions.status,
-      })
+      .select({ qtyRequested: distributions.qtyRequested, status: distributions.status })
       .from(distributions)
       .where(
         and(
@@ -420,7 +487,6 @@ router.post("/:id/submit", async (req: Request, res: Response, next: NextFunctio
       )
       .limit(20);
 
-    // AI risk assessment
     const riskResult = await analyzeRisk(
       {
         qtyRequested: dist.qtyRequested,
@@ -437,7 +503,6 @@ router.post("/:id/submit", async (req: Request, res: Response, next: NextFunctio
       }
     );
 
-    // Update reserved quantity on stock
     await db
       .update(stocks)
       .set({
@@ -446,7 +511,6 @@ router.post("/:id/submit", async (req: Request, res: Response, next: NextFunctio
       })
       .where(eq(stocks.id, dist.stockId));
 
-    // Update distribution status
     const [updatedDist] = await db
       .update(distributions)
       .set({
@@ -462,7 +526,6 @@ router.post("/:id/submit", async (req: Request, res: Response, next: NextFunctio
       .where(eq(distributions.id, id))
       .returning();
 
-    // Create approval record
     await db.insert(approvals).values({
       distributionId: id,
       status: "pending",
@@ -473,7 +536,6 @@ router.post("/:id/submit", async (req: Request, res: Response, next: NextFunctio
       aiConfidence: riskResult.confidence,
     });
 
-    // Notify all managers
     const managers = await db
       .select({ id: users.id })
       .from(users)
@@ -507,10 +569,7 @@ router.post("/:id/submit", async (req: Request, res: Response, next: NextFunctio
       ipAddress: req.ip,
     });
 
-    res.json({
-      distribution: updatedDist,
-      riskAssessment: riskResult,
-    });
+    res.json(toDistributionResponse(updatedDist, stock));
   } catch (err) {
     next(err);
   }

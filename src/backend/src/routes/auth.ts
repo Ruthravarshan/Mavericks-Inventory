@@ -146,7 +146,21 @@ router.post("/login", async (req: Request, res: Response, next: NextFunction) =>
       maxAge: 8 * 60 * 60 * 1000, // 8 hours
     });
 
-    const { passwordHash: _ph, ...safeUser } = user;
+    const { passwordHash: _ph, ...rawUser } = user;
+
+    // Map to frontend User type (snake_case)
+    const safeUser = {
+      id: String(rawUser.id),
+      employee_id: rawUser.employeeId,
+      name: rawUser.fullName,
+      email: rawUser.email,
+      role: rawUser.role,
+      department: rawUser.department ?? "",
+      location: rawUser.location ?? "",
+      is_active: rawUser.isActive,
+      last_login: rawUser.lastLoginAt?.toISOString() ?? null,
+      created_at: rawUser.createdAt.toISOString(),
+    };
 
     res.json({
       accessToken,
@@ -262,7 +276,19 @@ router.get("/me", authMiddleware, async (req: Request, res: Response, next: Next
       return;
     }
 
-    res.json(user);
+    // Map to frontend User type (snake_case)
+    res.json({
+      id: String(user.id),
+      employee_id: user.employeeId,
+      name: user.fullName,
+      email: user.email,
+      role: user.role,
+      department: user.department ?? "",
+      location: user.location ?? "",
+      is_active: user.isActive,
+      last_login: user.lastLoginAt?.toISOString() ?? null,
+      created_at: user.createdAt.toISOString(),
+    });
   } catch (err) {
     next(err);
   }

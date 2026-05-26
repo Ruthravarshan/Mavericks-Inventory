@@ -13,14 +13,19 @@ const router = Router();
 // All admin routes require admin role
 router.use(requireRole("admin"));
 
+// Accept both camelCase and frontend's snake_case field names
 const createUserSchema = z.object({
-  employeeId: z.string().min(1),
-  fullName: z.string().min(1),
+  employee_id: z.string().min(1).optional(),
+  employeeId: z.string().min(1).optional(),
+  name: z.string().min(1).optional(),
+  fullName: z.string().min(1).optional(),
   email: z.string().email(),
+  password: z.string().min(8).optional(),
   role: z.enum(["executive", "manager", "management_authority", "admin"]),
   department: z.string().optional(),
   location: z.string().optional(),
-});
+}).refine((d) => d.employee_id ?? d.employeeId, { message: "employee_id is required" })
+  .refine((d) => d.name ?? d.fullName, { message: "name is required" });
 
 // ─── GET /admin/system-health ─────────────────────────────────────────────────
 
@@ -59,26 +64,40 @@ router.get("/system-health", async (req: Request, res: Response, next: NextFunct
       .where(eq(anomalies.status, "active"));
 
     res.json({
-      status: dbStatus === "connected" ? "healthy" : "degraded",
-      timestamp: new Date().toISOString(),
-      services: {
-        database: { status: dbStatus, latencyMs: dbLatencyMs },
-        azure_openai: {
-          status: process.env.AZURE_OPENAI_ENDPOINT ? "configured" : "fallback_mode",
+      overall: dbStatus === "connected" ? "healthy" : "degraded",
+      checked_at: new Date().toISOString(),
+      services: [
+        {
+          name: "Database",
+          status: dbStatus === "connected" ? "healthy" : "down",
+          response_time_ms: dbLatencyMs,
+          message: dbStatus === "connected" ? "Connected" : "Connection failed",
         },
-        azure_blob: {
-          status: process.env.AZURE_STORAGE_CONNECTION_STRING ? "configured" : "fallback_mode",
+        {
+          name: "Azure OpenAI",
+          status: process.env.AZURE_OPENAI_ENDPOINT ? "healthy" : "degraded",
+          response_time_ms: 0,
+          message: process.env.AZURE_OPENAI_ENDPOINT ? "Configured" : "Using fallback mode",
         },
-        azure_search: {
-          status: process.env.AZURE_SEARCH_ENDPOINT ? "configured" : "fallback_mode",
+        {
+          name: "Azure Blob",
+          status: process.env.AZURE_STORAGE_CONNECTION_STRING ? "healthy" : "degraded",
+          response_time_ms: 0,
+          message: process.env.AZURE_STORAGE_CONNECTION_STRING ? "Configured" : "Using fallback mode",
         },
-      },
-      stats: {
-        totalStocks: Number(stockCount.count),
-        activeUsers: Number(userCount.count),
-        totalDistributions: Number(distCount.count),
-        activeAnomalies: Number(anomalyCount.count),
-      },
+        {
+          name: "Azure Search",
+          status: process.env.AZURE_SEARCH_ENDPOINT ? "healthy" : "degraded",
+          response_time_ms: 0,
+          message: process.env.AZURE_SEARCH_ENDPOINT ? "Configured" : "Using fallback mode",
+        },
+        {
+          name: "API Server",
+          status: "healthy",
+          response_time_ms: 0,
+          message: `${Number(stockCount.count)} stocks, ${Number(userCount.count)} users`,
+        },
+      ],
     });
   } catch (err) {
     next(err);
@@ -90,8 +109,12 @@ router.get("/system-health", async (req: Request, res: Response, next: NextFunct
 router.get("/users", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const page = Math.max(1, Number(req.query.page ?? 1));
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 20)));
-    const offset = (page - 1) * limit;
+    const page_size = Math.min(100, Math.max(1, Number(req.query.page_size ?? 20)));
+    const offset = (page - 1) * page_size;
+
+    const [{ total }] = await db
+      .select({ total: sql<number>`COUNT(*)` })
+      .from(users);
 
     const rows = await db
       .select({
@@ -108,14 +131,36 @@ router.get("/users", async (req: Request, res: Response, next: NextFunction) => 
       })
       .from(users)
       .orderBy(desc(users.createdAt))
-      .limit(limit)
+      .limit(page_size)
       .offset(offset);
 
-    res.json({ data: rows, pagination: { page, limit, total: rows.length } });
+    // Map to match frontend User type (snake_case)
+    const items = rows.map((u) => ({
+      id: String(u.id),
+      employee_id: u.employeeId,
+      name: u.fullName,
+      email: u.email,
+      role: u.role,
+      department: u.department ?? "",
+      location: u.location ?? "",
+      is_active: u.isActive,
+      last_login: u.lastLoginAt?.toISOString() ?? null,
+      created_at: u.createdAt.toISOString(),
+    }));
+
+    const totalNum = Number(total);
+    res.json({
+      items,
+      total: totalNum,
+      page,
+      page_size,
+      total_pages: Math.ceil(totalNum / page_size),
+    });
   } catch (err) {
     next(err);
   }
 });
+
 
 // ─── POST /admin/users ────────────────────────────────────────────────────────
 
@@ -131,14 +176,20 @@ router.post("/users", async (req: Request, res: Response, next: NextFunction) =>
       return;
     }
 
-    const tempPassword = `Temp@${uuidv4().slice(0, 8)}!`;
-    const passwordHash = await hashPassword(tempPassword);
+    const employeeId = parsed.data.employee_id ?? parsed.data.employeeId ?? "";
+    const fullName = parsed.data.name ?? parsed.data.fullName ?? "";
+    const rawPassword = parsed.data.password ?? `Temp@${uuidv4().slice(0, 8)}!`;
+    const passwordHash = await hashPassword(rawPassword);
 
     const [user] = await db
       .insert(users)
       .values({
-        ...parsed.data,
+        employeeId,
+        fullName,
         email: parsed.data.email.toLowerCase(),
+        role: parsed.data.role,
+        department: parsed.data.department,
+        location: parsed.data.location,
         passwordHash,
         isActive: true,
       })
@@ -162,11 +213,19 @@ router.post("/users", async (req: Request, res: Response, next: NextFunction) =>
       ipAddress: req.ip,
     });
 
-    // In production, send email with temp password
     res.status(201).json({
-      user,
-      tempPassword, // Would be removed in production (email only)
-      message: "User created. Share the temporary password securely.",
+      user: {
+        id: String(user.id),
+        employee_id: user.employeeId,
+        name: user.fullName,
+        email: user.email,
+        role: user.role,
+        department: user.department ?? "",
+        is_active: user.isActive,
+        created_at: user.createdAt.toISOString(),
+      },
+      tempPassword: parsed.data.password ? undefined : rawPassword,
+      message: "User created successfully.",
     });
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException & { code?: string }).code === "23505") {
@@ -182,7 +241,7 @@ router.post("/users", async (req: Request, res: Response, next: NextFunction) =>
 
 // ─── PATCH /admin/users/:id/deactivate ───────────────────────────────────────
 
-router.patch(
+router.post(
   "/users/:id/deactivate",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -229,7 +288,7 @@ router.patch(
 
 // ─── PATCH /admin/users/:id/activate ─────────────────────────────────────────
 
-router.patch(
+router.post(
   "/users/:id/activate",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -275,31 +334,120 @@ router.patch(
 
 router.get("/config", async (_req: Request, res: Response, next: NextFunction) => {
   try {
+    // Return shape matching SystemConfig type
     res.json({
-      config: {
-        maxLoginAttempts: 5,
-        lockDurationMinutes: 15,
-        l2QtyThreshold: 50,
-        l2RequiredCategories: ["Server"],
-        anomalyDetectionIntervalMinutes: 15,
-        azureOpenAI: {
-          configured: !!process.env.AZURE_OPENAI_ENDPOINT,
-          deployment: process.env.AZURE_OPENAI_DEPLOYMENT ?? "gpt-4o",
-        },
-        azureBlob: {
-          configured: !!process.env.AZURE_STORAGE_CONNECTION_STRING,
-          container: process.env.AZURE_STORAGE_CONTAINER ?? "mavericks-uploads",
-        },
-        azureSearch: {
-          configured: !!process.env.AZURE_SEARCH_ENDPOINT,
-          index: process.env.AZURE_SEARCH_INDEX ?? "mavericks-stocks",
-        },
-      },
+      l2_qty_threshold: 50,
+      l2_always_categories: ["Server"],
+      l1_sla_hours: 24,
+      l2_sla_hours: 48,
+      anomaly_sensitivity: "Medium",
+      session_timeout_minutes: 480,
     });
   } catch (err) {
     next(err);
   }
 });
+
+// ─── PUT /admin/config ────────────────────────────────────────────────────────
+
+router.put("/config", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Config is static in this deployment — acknowledge the update and return merged config
+    const defaults = {
+      l2_qty_threshold: 50,
+      l2_always_categories: ["Server"],
+      l1_sla_hours: 24,
+      l2_sla_hours: 48,
+      anomaly_sensitivity: "Medium",
+      session_timeout_minutes: 480,
+    };
+    const updated = { ...defaults, ...req.body };
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /admin/system-stats ──────────────────────────────────────────────────
+
+router.get("/system-stats", async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const [userStats] = await db
+      .select({
+        total: sql<number>`COUNT(*)`,
+        active: sql<number>`COUNT(*) FILTER (WHERE is_active = true)`,
+        loginsToday: sql<number>`COUNT(*) FILTER (WHERE DATE(last_login_at) = CURRENT_DATE)`,
+      })
+      .from(users);
+
+    const [stockCount] = await db
+      .select({ total: sql<number>`COUNT(*)` })
+      .from(stocks)
+      .where(isNull(stocks.deletedAt));
+
+    const [distCount] = await db
+      .select({ total: sql<number>`COUNT(*)` })
+      .from(distributions);
+
+    const [anomalyCount] = await db
+      .select({ total: sql<number>`COUNT(*)` })
+      .from(anomalies)
+      .where(eq(anomalies.status, "active"));
+
+    const [pendingCount] = await db
+      .select({ total: sql<number>`COUNT(*)` })
+      .from(distributions)
+      .where(sql`status IN ('submitted','l1_pending','l2_pending')`);
+
+    // Distributions pending over 48 hours
+    const pendingOver48h = await db
+      .select({
+        transaction_code: distributions.transactionCode,
+        stock_name: sql<string>`s.stock_name`,
+        hours_pending: sql<number>`EXTRACT(EPOCH FROM (NOW() - distributions.submitted_at)) / 3600`,
+        risk_level: distributions.aiRiskScore,
+        submitted_by: sql<string>`u.full_name`,
+      })
+      .from(sql`distributions JOIN stocks s ON distributions.stock_id = s.id JOIN users u ON distributions.created_by = u.id`)
+      .where(sql`distributions.submitted_at IS NOT NULL AND distributions.status IN ('submitted','l1_pending','l2_pending') AND distributions.submitted_at < NOW() - INTERVAL '48 hours'`)
+      .limit(10);
+
+    // Top distributed items
+    const topDist = await db
+      .select({
+        stock_name: sql<string>`s.stock_name`,
+        total_qty: sql<number>`SUM(d.qty_requested)`,
+      })
+      .from(sql`distributions d JOIN stocks s ON d.stock_id = s.id`)
+      .groupBy(sql`s.stock_name`)
+      .orderBy(sql`SUM(d.qty_requested) DESC`)
+      .limit(10);
+
+    res.json({
+      total_users: Number(userStats.total),
+      active_users: Number(userStats.active),
+      logins_today: Number(userStats.loginsToday),
+      total_stocks: Number(stockCount.total),
+      total_distributions: Number(distCount.total),
+      total_anomalies: Number(anomalyCount.total),
+      pending_approvals: Number(pendingCount.total),
+      pending_over_48h: pendingOver48h.map((r) => ({
+        transaction_code: r.transaction_code,
+        stock_name: r.stock_name,
+        hours_pending: Math.round(Number(r.hours_pending)),
+        risk_level: r.risk_level ?? "Unknown",
+        submitted_by: r.submitted_by,
+      })),
+      top_distributed: topDist.map((r) => ({
+        stock_name: r.stock_name,
+        total_qty: Number(r.total_qty),
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 
 // ─── GET /admin/categories ────────────────────────────────────────────────────
 

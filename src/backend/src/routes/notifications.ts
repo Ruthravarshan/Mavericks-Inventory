@@ -1,8 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { z } from "zod";
 import { db } from "../db/index.js";
 import { notifications } from "../db/schema/index.js";
-import { eq, and, inArray, desc } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 
 const router = Router();
 
@@ -17,50 +16,25 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       .orderBy(desc(notifications.createdAt))
       .limit(50);
 
-    const unreadCount = rows.filter((n) => !n.isRead).length;
-
-    res.json({ data: rows, unreadCount });
+    res.json(
+      rows.map((n) => ({
+        id: String(n.id),
+        type: n.type,
+        title: n.title,
+        message: n.message,
+        link: null,
+        is_read: n.isRead,
+        created_at: n.createdAt.toISOString(),
+      }))
+    );
   } catch (err) {
     next(err);
   }
 });
 
-// ─── POST /notifications/mark-read ───────────────────────────────────────────
+// ─── POST /notifications/mark-all-read ───────────────────────────────────────
 
-router.post("/mark-read", async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const schema = z.object({
-      ids: z.array(z.number().int().positive()),
-    });
-
-    const parsed = schema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error_code: "VALIDATION_ERROR",
-        message: "ids must be an array of integers",
-      });
-      return;
-    }
-
-    await db
-      .update(notifications)
-      .set({ isRead: true, readAt: new Date() })
-      .where(
-        and(
-          inArray(notifications.id, parsed.data.ids),
-          eq(notifications.userId, req.user!.id)
-        )
-      );
-
-    res.json({ message: "Notifications marked as read" });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ─── POST /notifications/read-all ────────────────────────────────────────────
-
-router.post("/read-all", async (req: Request, res: Response, next: NextFunction) => {
+router.post("/mark-all-read", async (req: Request, res: Response, next: NextFunction) => {
   try {
     await db
       .update(notifications)

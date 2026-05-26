@@ -11,6 +11,8 @@ import notificationsRouter from "./notifications.js";
 import adminRouter from "./admin.js";
 import uploadRouter from "./upload.js";
 import ledgerRouter from "./ledger.js";
+import auditLogRouter from "./audit-log.js";
+import reportsRouter from "./reports.js";
 import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
@@ -30,5 +32,8 @@ router.use("/notifications", authMiddleware, notificationsRouter);
 router.use("/admin", authMiddleware, adminRouter);
 router.use("/upload", authMiddleware, uploadRouter);
 router.use("/ledger", authMiddleware, ledgerRouter);
+router.use("/audit-log", authMiddleware, auditLogRouter);
+router.use("/reports", authMiddleware, reportsRouter);
+
 
 export default router;

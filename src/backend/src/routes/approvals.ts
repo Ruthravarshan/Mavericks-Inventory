@@ -63,34 +63,136 @@ router.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const statusFilter = req.query.status as string | undefined;
+      const levelFilter = req.query.level as string | undefined;
+      const riskFilter = req.query.risk_level as string | undefined;
       const page = Math.max(1, Number(req.query.page ?? 1));
-      const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 20)));
-      const offset = (page - 1) * limit;
+      const page_size = Math.min(100, Math.max(1, Number(req.query.page_size ?? 20)));
+      const offset = (page - 1) * page_size;
 
       const conditions = [];
 
-      if (statusFilter) {
-        conditions.push(
-          eq(
-            approvals.status,
-            statusFilter as "pending" | "l1_approved" | "approved" | "rejected"
-          )
-        );
+      // Map level filter to approval status
+      if (levelFilter === "l1") {
+        conditions.push(eq(approvals.status, "pending"));
+      } else if (levelFilter === "l2") {
+        conditions.push(eq(approvals.status, "l1_approved"));
+      } else if (statusFilter) {
+        // Map frontend status strings to DB enum values
+        const statusMap: Record<string, "pending" | "l1_approved" | "approved" | "rejected"> = {
+          "pending": "pending",
+          "l1_pending": "pending",
+          "l2_pending": "l1_approved",
+          "approved": "approved",
+          "rejected": "rejected",
+        };
+        const dbStatus = statusMap[statusFilter];
+        if (dbStatus) conditions.push(eq(approvals.status, dbStatus));
       }
 
-      const rows = await db
-        .select()
+      if (riskFilter) {
+        conditions.push(sql`LOWER(ai_risk_level) = LOWER(${riskFilter})`);
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [{ total }] = await db
+        .select({ total: sql<number>`COUNT(*)` })
         .from(approvals)
-        .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .limit(limit)
+        .where(whereClause);
+
+      const rows = await db
+        .select({
+          id: approvals.id,
+          distributionId: approvals.distributionId,
+          status: approvals.status,
+          aiRecommendation: approvals.aiRecommendation,
+          aiRiskScore: approvals.aiRiskScore,
+          aiRiskLevel: approvals.aiRiskLevel,
+          aiReasoning: approvals.aiReasoning,
+          requiresL2: approvals.requiresL2,
+          l2Status: approvals.l2Status,
+          approvedBy: approvals.approvedBy,
+          approvedAt: approvals.approvedAt,
+          remarks: approvals.remarks,
+          l2ApprovedBy: approvals.l2ApprovedBy,
+          l2ApprovedAt: approvals.l2ApprovedAt,
+          l2Remarks: approvals.l2Remarks,
+          createdAt: approvals.createdAt,
+          updatedAt: approvals.updatedAt,
+          // Distribution fields via JOIN
+          transactionCode: distributions.transactionCode,
+          qtyRequested: distributions.qtyRequested,
+          recipientName: distributions.recipientName,
+          recipientType: distributions.recipientType,
+          purpose: distributions.purpose,
+          location: distributions.location,
+          distributionDate: distributions.distributionDate,
+          submittedAt: distributions.submittedAt,
+          stockId: distributions.stockId,
+        })
+        .from(approvals)
+        .leftJoin(distributions, eq(approvals.distributionId, distributions.id))
+        .where(whereClause)
+        .orderBy(sql`${approvals.createdAt} DESC`)
+        .limit(page_size)
         .offset(offset);
 
-      res.json({ data: rows, pagination: { page, limit, total: rows.length } });
+      // Get stock names
+      const stockIds = [...new Set(rows.map((r) => r.stockId).filter(Boolean))];
+      let stockMap: Record<number, { name: string; code: string }> = {};
+      if (stockIds.length > 0) {
+        const stockRows = await db
+          .select({ id: stocks.id, stockName: stocks.stockName, stockCode: stocks.stockCode })
+          .from(stocks)
+          .where(inArray(stocks.id, stockIds as number[]));
+        stockMap = Object.fromEntries(stockRows.map((s) => [s.id, { name: s.stockName, code: s.stockCode }]));
+      }
+
+      const items = rows.map((r) => ({
+        id: String(r.id),
+        distribution_id: String(r.distributionId),
+        transaction_code: r.transactionCode ?? "",
+        stock_name: r.stockId ? (stockMap[r.stockId]?.name ?? "") : "",
+        stock_code: r.stockId ? (stockMap[r.stockId]?.code ?? "") : "",
+        qty_requested: r.qtyRequested ?? 0,
+        uom: "",
+        recipient_name: r.recipientName ?? "",
+        recipient_type: r.recipientType ?? "",
+        purpose: r.purpose ?? "",
+        location: r.location ?? "",
+        distribution_date: r.distributionDate ?? "",
+        status: r.status,
+        risk_score: 0,
+        risk_level: (r.aiRiskLevel ?? "Low") as "Low" | "Medium" | "High",
+        ai_recommendation: (r.aiRecommendation || "Review") as "Approve" | "Review" | "Reject",
+        ai_reasoning: r.aiReasoning ?? "",
+        submitted_at: r.submittedAt?.toISOString() ?? "",
+        days_pending: r.submittedAt
+          ? Math.floor((Date.now() - r.submittedAt.getTime()) / 86400000)
+          : 0,
+        l1_approved_by: r.approvedBy ? String(r.approvedBy) : null,
+        l1_approved_at: r.approvedAt?.toISOString() ?? null,
+        l1_remarks: r.remarks ?? null,
+        l2_approved_by: r.l2ApprovedBy ? String(r.l2ApprovedBy) : null,
+        l2_approved_at: r.l2ApprovedAt?.toISOString() ?? null,
+        l2_remarks: r.l2Remarks ?? null,
+        created_by_name: "",
+      }));
+
+      const totalNum = Number(total);
+      res.json({
+        items,
+        total: totalNum,
+        page,
+        page_size,
+        total_pages: Math.ceil(totalNum / page_size),
+      });
     } catch (err) {
       next(err);
     }
   }
 );
+
 
 // ─── GET /approvals/:id ───────────────────────────────────────────────────────
 
@@ -134,7 +236,7 @@ router.get(
 // ─── POST /approvals/:id/approve (L1) ────────────────────────────────────────
 
 router.post(
-  "/:id/approve",
+  "/:id/l1-approve",
   requireRole("manager", "admin"),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -289,7 +391,7 @@ router.post(
 // ─── POST /approvals/:id/reject ───────────────────────────────────────────────
 
 router.post(
-  "/:id/reject",
+  "/:id/l1-reject",
   requireRole("manager", "admin"),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -594,18 +696,18 @@ router.post(
   requireRole("manager", "admin"),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const idsSchema = z.object({ approvalIds: z.array(z.number().int().positive()) });
+      const idsSchema = z.object({ ids: z.array(z.coerce.number().int().positive()) });
       const parsed = idsSchema.safeParse(req.body);
 
       if (!parsed.success) {
         res.status(400).json({
           error_code: "VALIDATION_ERROR",
-          message: "approvalIds must be an array of integers",
+          message: "ids must be an array of integers",
         });
         return;
       }
 
-      const { approvalIds } = parsed.data;
+      const { ids: approvalIds } = parsed.data;
 
       const approvalsToProcess = await db
         .select()
@@ -696,8 +798,8 @@ router.post(
       });
 
       res.json({
-        processed,
-        skipped,
+        approved: processed.length,
+        failed: skipped.length,
         message: `Approved ${processed.length}, skipped ${skipped.length} (high/medium risk or already processed)`,
       });
     } catch (err) {
