@@ -309,6 +309,180 @@ export interface SystemConfig {
   session_timeout_minutes: number;
 }
 
+// ─── IT Asset Management ─────────────────────────────────────────────────────
+
+export interface Asset {
+  id: string;
+  asset_tag: string;
+  serial_number: string | null;
+  stock_id: string | null;
+  category: string;
+  sub_category: string | null;
+  brand: string | null;
+  model: string | null;
+  description: string | null;
+  condition: "new" | "good" | "fair" | "poor" | "damaged";
+  status: "available" | "assigned" | "under_maintenance" | "retired" | "lost";
+  location: string | null;
+  purchase_date: string | null;
+  warranty_expiry: string | null;
+  purchase_price: string | null;
+  invoice_number: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  current_assignee: {
+    employee_id: string;
+    employee_name: string | null;
+    employee_email: string | null;
+    assigned_date: string | null;
+    validity_date: string | null;
+    next_audit_due: string | null;
+  } | null;
+}
+
+export interface MyAsset {
+  assignment_id: string;
+  assignment_code: string;
+  asset_id: string;
+  asset_tag: string;
+  serial_number: string | null;
+  category: string;
+  sub_category: string | null;
+  brand: string | null;
+  model: string | null;
+  description: string | null;
+  condition: string;
+  location: string | null;
+  warranty_expiry: string | null;
+  assigned_date: string | null;
+  validity_date: string | null;
+  validity_status: "valid" | "expiring_soon" | "expired";
+  next_audit_due: string | null;
+  last_audit_date: string | null;
+  audit_status: "ok" | "due_soon" | "overdue";
+  purpose: string | null;
+  assignment_status: string;
+}
+
+export interface AssetRequest {
+  id: string;
+  request_code: string;
+  requested_by: string;
+  requester_name: string | null;
+  requester_email: string | null;
+  category: string;
+  sub_category: string | null;
+  item_description: string;
+  reason: string;
+  priority: "low" | "normal" | "urgent" | "critical";
+  status: "pending" | "approved" | "rejected" | "fulfilled" | "cancelled";
+  review_notes: string | null;
+  reviewed_at: string | null;
+  fulfilled_at: string | null;
+  fulfilled_asset_id: string | null;
+  created_at: string;
+}
+
+export interface AssetAudit {
+  audit_id: string;
+  audit_code: string;
+  asset_id: string;
+  asset_tag: string;
+  category: string | null;
+  model: string | null;
+  conducted_by: string;
+  audit_type: "scheduled" | "spot_check" | "self_audit" | "renewal";
+  ai_status: "pending" | "processing" | "verified" | "needs_review" | "failed";
+  ai_confidence: number | null;
+  ai_observations: string | null;
+  ai_asset_tag_detected: string | null;
+  ai_condition_assessment: string | null;
+  needs_human_review: boolean;
+  final_status: "pending" | "verified" | "flagged" | "lost" | "damaged";
+  human_review_notes: string | null;
+  completed_at: string | null;
+  created_at: string;
+  media_urls: string[];
+}
+
+export interface Employee {
+  id: string;
+  employee_id: string;
+  name: string;
+  email: string;
+  department: string | null;
+  designation: string | null;
+  location: string | null;
+  onboarding_date: string | null;
+  is_active: boolean;
+  asset_count: number;
+  created_at: string;
+}
+
+export interface EmployeeAsset {
+  assignment_id: string;
+  assignment_code: string;
+  asset_id: string;
+  asset_tag: string;
+  category: string;
+  sub_category: string | null;
+  brand: string | null;
+  model: string | null;
+  condition: string;
+  serial_number: string | null;
+  location: string | null;
+  warranty_expiry: string | null;
+  assigned_date: string | null;
+  validity_date: string | null;
+  days_to_expiry: number | null;
+  next_audit_due: string | null;
+  last_audit_date: string | null;
+  audit_overdue: boolean;
+  status: string;
+}
+
+export interface AssetListParams {
+  page?: number;
+  page_size?: number;
+  search?: string;
+  category?: string;
+  status?: string;
+}
+
+export interface RequestListParams {
+  page?: number;
+  page_size?: number;
+  status?: string;
+}
+
+export interface CreateAssetRequest {
+  asset_tag: string;
+  serial_number?: string;
+  stock_id?: number;
+  category: string;
+  sub_category?: string;
+  brand?: string;
+  model?: string;
+  description?: string;
+  condition?: "new" | "good" | "fair" | "poor" | "damaged";
+  status?: "available" | "assigned" | "under_maintenance" | "retired" | "lost";
+  location?: string;
+  purchase_date?: string;
+  warranty_expiry?: string;
+  purchase_price?: string;
+  invoice_number?: string;
+  notes?: string;
+}
+
+export interface CreateItemRequest {
+  category: string;
+  sub_category?: string;
+  item_description: string;
+  reason: string;
+  priority?: "low" | "normal" | "urgent" | "critical";
+}
+
 // ─── Reports ─────────────────────────────────────────────────────────────────
 
 export interface ReportData {

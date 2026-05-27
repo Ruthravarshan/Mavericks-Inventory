@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-05-27T05:49:25.057Z",
+  "base_url": "http://localhost:8080/api/v1",
+  "elapsed_seconds": 8.9,
+  "summary": {
+    "passed": 225,
+    "failed": 0,
+    "skipped": 1,
+    "total": 226
+  },
+  "failed_tests": []
+}

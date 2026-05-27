@@ -1,6 +1,7 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
+import { ThemeProvider } from "@/contexts/theme-context";
 import { AppLayout } from "@/components/app-layout";
 import { Toaster } from "@/components/ui/toaster";
 
@@ -51,6 +52,18 @@ import AnomaliesPage from "@/pages/anomalies";
 import AuditLogPage from "@/pages/audit-log";
 import AdminPage from "@/pages/admin";
 import NotFoundPage from "@/pages/not-found";
+import MyAssetsPage from "@/pages/my-assets";
+import MakeRequestPage from "@/pages/make-request";
+import MyRequestsPage from "@/pages/my-requests";
+import AssetAuditPage from "@/pages/asset-audit";
+import EmployeesPage from "@/pages/employees";
+import AssetsPage from "@/pages/assets";
+import ManageRequestsPage from "@/pages/manage-requests";
+import EmployeeDetailPage from "@/pages/employee-detail";
+import ProfilePage from "@/pages/profile";
+import LedgerPage from "@/pages/ledger";
+import ReconciliationPage from "@/pages/reconciliation";
+import LegalHoldsPage from "@/pages/legal-holds";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { accessToken } = useAuth();
@@ -79,6 +92,7 @@ function ManagerRoute({ children }: { children: React.ReactNode }) {
   if (!isManagerOrAbove) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
+
 
 function AppRoutes() {
   return (
@@ -133,6 +147,19 @@ function AppRoutes() {
             </AdminRoute>
           }
         />
+        {/* IT Asset Management routes */}
+        <Route path="/my-assets" element={<MyAssetsPage />} />
+        <Route path="/make-request" element={<MakeRequestPage />} />
+        <Route path="/my-requests" element={<MyRequestsPage />} />
+        <Route path="/asset-audit" element={<AssetAuditPage />} />
+        <Route path="/assets" element={<AssetsPage />} />
+        <Route path="/employees" element={<EmployeesPage />} />
+        <Route path="/employees/:id" element={<EmployeeDetailPage />} />
+        <Route path="/manage-requests" element={<ManagerRoute><ManageRequestsPage /></ManagerRoute>} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/ledger" element={<LedgerPage />} />
+        <Route path="/reconciliation" element={<ReconciliationPage />} />
+        <Route path="/legal-holds" element={<LegalHoldsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
@@ -142,12 +169,14 @@ function AppRoutes() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <BrowserRouter>
-          <AppRoutes />
-          <Toaster />
-        </BrowserRouter>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <AppRoutes />
+            <Toaster />
+          </BrowserRouter>
+        </AuthProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

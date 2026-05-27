@@ -21,7 +21,7 @@ const createUserSchema = z.object({
   fullName: z.string().min(1).optional(),
   email: z.string().email(),
   password: z.string().min(8).optional(),
-  role: z.enum(["executive", "manager", "management_authority", "admin"]),
+  role: z.enum(["user", "executive", "manager", "management_authority", "admin"]),
   department: z.string().optional(),
   location: z.string().optional(),
 }).refine((d) => d.employee_id ?? d.employeeId, { message: "employee_id is required" })
@@ -402,10 +402,10 @@ router.get("/system-stats", async (_req: Request, res: Response, next: NextFunct
     // Distributions pending over 48 hours
     const pendingOver48h = await db
       .select({
-        transaction_code: distributions.transactionCode,
+        transaction_code: sql<string>`distributions.transaction_code`,
         stock_name: sql<string>`s.stock_name`,
         hours_pending: sql<number>`EXTRACT(EPOCH FROM (NOW() - distributions.submitted_at)) / 3600`,
-        risk_level: distributions.aiRiskScore,
+        risk_level: sql<string>`distributions.ai_risk_score`,
         submitted_by: sql<string>`u.full_name`,
       })
       .from(sql`distributions JOIN stocks s ON distributions.stock_id = s.id JOIN users u ON distributions.created_by = u.id`)

@@ -1,0 +1,16 @@
+{
+  "name": "mavericks-tests",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Comprehensive API tests for Mavericks Inventory",
+  "scripts": {
+    "generate": "node generate-data.js",
+    "test": "node run-tests.js",
+    "test:upload": "node test-upload.js",
+    "all": "node generate-data.js && node run-tests.js"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5",
+    "form-data": "^4.0.0"
+  }
+}

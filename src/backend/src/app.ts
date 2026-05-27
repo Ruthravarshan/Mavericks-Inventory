@@ -75,7 +75,11 @@ const aiLimiter = rateLimit({
 });
 
 app.use(generalLimiter);
-app.use("/api/v1/upload", uploadLimiter);
+// Only rate-limit upload POST requests, not GET (job status / history)
+app.use("/api/v1/upload", (req: Request, res: Response, next: NextFunction) => {
+  if (req.method === "POST") return uploadLimiter(req, res, next);
+  next();
+});
 app.use("/api/v1/insights", aiLimiter);
 
 // ─── Health endpoint (no auth, no versioning) ─────────────────────────────────

@@ -2,12 +2,13 @@ import { Router, Request, Response, NextFunction } from "express";
 import { db } from "../db/index.js";
 import { activity } from "../db/schema/index.js";
 import { sql, desc, gte, lte, and, ilike } from "drizzle-orm";
+import { requireRole } from "../middleware/rbac.js";
 
 const router = Router();
 
 // ─── GET /audit-log ───────────────────────────────────────────────────────────
 
-router.get("/", async (req: Request, res: Response, next: NextFunction) => {
+router.get("/", requireRole("manager", "management_authority", "admin"), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const page = Math.max(1, Number(req.query.page ?? 1));
     const page_size = Math.min(100, Math.max(1, Number(req.query.page_size ?? 20)));

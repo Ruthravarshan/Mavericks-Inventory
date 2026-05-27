@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { db } from "./index.js";
-import { users, stocks, anomalies, stockLedger } from "./schema/index.js";
+import { users, stocks, anomalies, stockLedger, assets, assetAssignments } from "./schema/index.js";
 import { hashPassword } from "../lib/auth.js";
 import logger from "../lib/logger.js";
 
@@ -13,6 +13,8 @@ async function seed() {
   const passwordExec = await hashPassword("Exec@123!");
   const passwordManager = await hashPassword("Manager@123!");
   const passwordL2 = await hashPassword("L2Auth@123!");
+  const passwordEmployee = await hashPassword("Employee@123!");
+  const passwordEmployee2 = await hashPassword("Employee@123!");
 
   const [admin] = await db
     .insert(users)
@@ -74,8 +76,45 @@ async function seed() {
     .onConflictDoNothing()
     .returning();
 
+  // IT Employee accounts
+  const [employee1] = await db
+    .insert(users)
+    .values({
+      employeeId: "EMP-001",
+      fullName: "John Developer",
+      email: "employee@mavericks.com",
+      passwordHash: passwordEmployee,
+      role: "user",
+      department: "Engineering",
+      designation: "Senior Software Engineer",
+      location: "Head Office",
+      onboardingDate: new Date("2024-01-15"),
+      isActive: true,
+    })
+    .onConflictDoNothing()
+    .returning();
+
+  const [employee2] = await db
+    .insert(users)
+    .values({
+      employeeId: "EMP-002",
+      fullName: "Sarah Designer",
+      email: "sarah@mavericks.com",
+      passwordHash: passwordEmployee2,
+      role: "user",
+      department: "Design",
+      designation: "UX Designer",
+      location: "Branch Office",
+      onboardingDate: new Date("2024-03-01"),
+      isActive: true,
+    })
+    .onConflictDoNothing()
+    .returning();
+
   const adminId = admin?.id ?? 1;
   const execId = exec?.id ?? 2;
+  const managerId = manager?.id ?? 3;
+  const emp1Id = employee1?.id ?? 5;
 
   logger.info("Users seeded");
 
@@ -320,13 +359,68 @@ async function seed() {
 
   logger.info("Sample anomalies seeded");
 
+  // ─── IT Assets ──────────────────────────────────────────────────────────────
+
+  const itAssets = [
+    { assetTag: "LAP-EMP001", serialNumber: "DELL-SN-2024-001", category: "Laptop", brand: "Dell", model: "Latitude 5530", condition: "good" as const, status: "assigned" as const, location: "Head Office", purchaseDate: new Date("2024-01-15"), warrantyExpiry: new Date("2027-01-15") },
+    { assetTag: "MON-EMP001", serialNumber: "LG-MON-2024-001", category: "Monitor", brand: "LG", model: "27UK850-W 4K", condition: "good" as const, status: "assigned" as const, location: "Head Office", purchaseDate: new Date("2024-01-15"), warrantyExpiry: new Date("2027-01-15") },
+    { assetTag: "PHN-EMP001", serialNumber: "APPLE-IP-2024-001", category: "Mobile Phone", brand: "Apple", model: "iPhone 14 Pro", condition: "good" as const, status: "assigned" as const, location: "Head Office", purchaseDate: new Date("2024-01-15"), warrantyExpiry: new Date("2026-01-15") },
+    { assetTag: "IDC-EMP001", serialNumber: null, category: "ID Card", brand: null, model: "Employee ID Card", condition: "new" as const, status: "assigned" as const, location: "Head Office" },
+    { assetTag: "LAP-EMP002", serialNumber: "HP-SN-2024-002", category: "Laptop", brand: "HP", model: "EliteBook 840 G9", condition: "new" as const, status: "assigned" as const, location: "Branch Office", purchaseDate: new Date("2024-03-01"), warrantyExpiry: new Date("2027-03-01") },
+    { assetTag: "LAP-AVAIL-001", serialNumber: "DELL-SN-2024-003", category: "Laptop", brand: "Dell", model: "Latitude 7430", condition: "new" as const, status: "available" as const, location: "IT Store", purchaseDate: new Date("2024-06-01"), warrantyExpiry: new Date("2027-06-01") },
+    { assetTag: "MON-AVAIL-001", serialNumber: "DELL-MON-2024-002", category: "Monitor", brand: "Dell", model: "P2422H 24-inch", condition: "new" as const, status: "available" as const, location: "IT Store" },
+    { assetTag: "MSE-AVAIL-001", serialNumber: null, category: "Peripherals", brand: "Logitech", model: "MX Master 3", condition: "new" as const, status: "available" as const, location: "IT Store" },
+    { assetTag: "KB-AVAIL-001", serialNumber: null, category: "Peripherals", brand: "Logitech", model: "MX Keys", condition: "new" as const, status: "available" as const, location: "IT Store" },
+    { assetTag: "LIC-MS365-001", serialNumber: "MS365-2024-001", category: "Software License", brand: "Microsoft", model: "Microsoft 365 E3", condition: "new" as const, status: "assigned" as const, location: "Cloud" },
+  ];
+
+  const insertedAssets: (typeof assets.$inferSelect)[] = [];
+  for (const assetData of itAssets) {
+    const [asset] = await db
+      .insert(assets)
+      .values({ ...assetData, createdBy: adminId })
+      .onConflictDoNothing()
+      .returning();
+    if (asset) insertedAssets.push(asset);
+  }
+
+  logger.info(`${insertedAssets.length} IT assets seeded`);
+
+  // Assign assets to employee1 with realistic 2026 dates
+  const assetValidityMap: Record<string, { validity: Date; nextAudit: Date; lastAudit: Date | null }> = {
+    "LAP-EMP001":   { validity: new Date("2027-01-15"), nextAudit: new Date("2026-08-15"), lastAudit: new Date("2026-02-10") },
+    "MON-EMP001":   { validity: new Date("2027-01-15"), nextAudit: new Date("2026-06-10"), lastAudit: new Date("2026-02-10") },
+    "PHN-EMP001":   { validity: new Date("2026-07-15"), nextAudit: new Date("2026-06-01"), lastAudit: null },  // expiring soon
+    "IDC-EMP001":   { validity: new Date("2026-12-31"), nextAudit: new Date("2026-09-01"), lastAudit: new Date("2026-01-20") },
+    "LIC-MS365-001":{ validity: new Date("2026-06-30"), nextAudit: new Date("2026-05-20"), lastAudit: null },  // expiring soon + audit overdue
+  };
+
+  const emp1Assets = insertedAssets.filter((a) => Object.keys(assetValidityMap).includes(a.assetTag));
+  for (const asset of emp1Assets) {
+    const dates = assetValidityMap[asset.assetTag];
+    await db.insert(assetAssignments).values({
+      assignmentCode: `ASGN-SEED-${asset.assetTag}`,
+      assetId: asset.id,
+      employeeId: emp1Id,
+      assignedDate: new Date("2024-01-15"),
+      validityDate: dates.validity,
+      nextAuditDue: dates.nextAudit,
+      lastAuditDate: dates.lastAudit,
+      status: "active",
+      purpose: "Employee onboarding kit",
+      assignedBy: managerId,
+    }).onConflictDoNothing();
+  }
+
+  logger.info("Asset assignments seeded");
   logger.info("✓ Database seed complete");
   logger.info("");
   logger.info("Test credentials:");
-  logger.info("  Admin:   admin@mavericks.com / Admin@123!");
-  logger.info("  Exec:    exec@mavericks.com  / Exec@123!");
-  logger.info("  Manager: manager@mavericks.com / Manager@123!");
-  logger.info("  L2 Auth: l2@mavericks.com / L2Auth@123!");
+  logger.info("  IT Employee: employee@mavericks.com / Employee@123!");
+  logger.info("  IT Manager:  manager@mavericks.com  / Manager@123!");
+  logger.info("  Admin:       admin@mavericks.com    / Admin@123!");
+  logger.info("  Exec:        exec@mavericks.com     / Exec@123!");
+  logger.info("  L2 Auth:     l2@mavericks.com       / L2Auth@123!");
 
   process.exit(0);
 }

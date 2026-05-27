@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-05-26T17:38:36.892Z",
+  "base_url": "http://localhost:8080/api/v1",
+  "elapsed_seconds": 47,
+  "summary": {
+    "passed": 224,
+    "failed": 1,
+    "skipped": 1,
+    "total": 226
+  },
+  "failed_tests": [
+    {
+      "name": "GET /reports/user-activity",
+      "detail": "got 500, expected 200. Body: {\"error_code\":\"INTERNAL_SERVER_ERROR\",\"message\":\"desc is not defined\",\"stack\":\"ReferenceError: desc is not defined\\n    "
+    }
+  ]
+}

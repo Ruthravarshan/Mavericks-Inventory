@@ -9,10 +9,43 @@ import {
   stockLedger,
   activity,
 } from "../db/schema/index.js";
-import { eq } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { uploadFile } from "../lib/azure-blob.js";
 import { selfHealExcelRows } from "../lib/azure-openai.js";
 import logger from "../lib/logger.js";
+
+type UploadJobRow = typeof uploadJobs.$inferSelect;
+
+function toUploadJobResponse(job: UploadJobRow) {
+  let errors: { row: number; field: string; error: string; value: string }[] = [];
+  if (job.errorReportJson) {
+    try {
+      const raw = JSON.parse(job.errorReportJson) as { rowNumber?: number; row?: number; field?: string; errorType?: string; message?: string; value?: string }[];
+      errors = raw.map((e) => ({
+        row: e.rowNumber ?? e.row ?? 0,
+        field: e.field ?? "",
+        error: e.message ?? e.errorType ?? "Unknown error",
+        value: String(e.value ?? ""),
+      }));
+    } catch { /* ignore parse errors */ }
+  }
+
+  return {
+    id: String(job.id),
+    job_type: job.uploadType === "stock_master" ? "stocks" : "distributions",
+    filename: job.fileName,
+    status: job.status as "queued" | "processing" | "completed" | "failed",
+    total_rows: job.rowsTotal ?? 0,
+    saved_rows: job.rowsValid ?? 0,
+    corrected_rows: job.rowsCorrected ?? 0,
+    failed_rows: job.rowsFailed ?? 0,
+    corrections: [] as { row: number; field: string; original_value: string; corrected_value: string; reason: string }[],
+    errors,
+    uploaded_by: String(job.uploadedBy),
+    uploaded_at: (job.createdAt ?? new Date()).toISOString(),
+    completed_at: job.completedAt?.toISOString() ?? null,
+  };
+}
 
 const router = Router();
 
@@ -267,11 +300,68 @@ router.post("/stocks", upload.single("file"), async (req: Request, res: Response
       );
     });
 
-    res.status(202).json({
-      jobId: job.id,
-      message: "Upload queued for processing",
-      status: "queued",
-    });
+    res.status(202).json(toUploadJobResponse(job));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /upload/jobs — history list ─────────────────────────────────────────
+
+router.get("/jobs", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const typeFilter = req.query.type as string | undefined;
+    const page = Math.max(1, Number(req.query.page ?? 1));
+    const page_size = Math.min(50, Math.max(1, Number(req.query.page_size ?? 20)));
+    const offset = (page - 1) * page_size;
+
+    // Map frontend type names to DB uploadType values
+    const uploadTypeMap: Record<string, string> = {
+      stocks: "stock_master",
+      distributions: "distribution",
+    };
+
+    const conditions = [];
+    if (typeFilter && uploadTypeMap[typeFilter]) {
+      conditions.push(eq(uploadJobs.uploadType, uploadTypeMap[typeFilter] as "stock_master" | "distribution"));
+    }
+
+    const rows = await db
+      .select()
+      .from(uploadJobs)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(uploadJobs.createdAt))
+      .limit(page_size)
+      .offset(offset);
+
+    res.json(rows.map(toUploadJobResponse));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /upload/jobs/:jobId — single job status ──────────────────────────────
+
+router.get("/jobs/:jobId", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const jobId = Number(req.params.jobId);
+    if (isNaN(jobId)) {
+      res.status(400).json({ error_code: "INVALID_ID", message: "Invalid job ID" });
+      return;
+    }
+
+    const [job] = await db
+      .select()
+      .from(uploadJobs)
+      .where(eq(uploadJobs.id, jobId))
+      .limit(1);
+
+    if (!job) {
+      res.status(404).json({ error_code: "NOT_FOUND", message: "Upload job not found" });
+      return;
+    }
+
+    res.json(toUploadJobResponse(job));
   } catch (err) {
     next(err);
   }
@@ -298,7 +388,7 @@ router.get("/:jobId/status", async (req: Request, res: Response, next: NextFunct
       return;
     }
 
-    res.json(job);
+    res.json(toUploadJobResponse(job));
   } catch (err) {
     next(err);
   }
@@ -379,11 +469,38 @@ router.post("/distributions", upload.single("file"), async (req: Request, res: R
       );
     });
 
-    res.status(202).json({
-      jobId: job.id,
-      message: "Distribution upload queued",
-      status: "queued",
-    });
+    res.status(202).json(toUploadJobResponse(job));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /upload/templates/:type — plural alias used by frontend ──────────────
+
+router.get("/templates/:type", async (req: Request, res: Response, next: NextFunction) => {
+  const type = req.params.type as "stocks" | "distributions";
+  if (type !== "stocks" && type !== "distributions") {
+    res.status(404).json({ error_code: "NOT_FOUND", message: "Template type not found" });
+    return;
+  }
+  // Delegate to the singular handler by mutating params and calling next middleware
+  // Actually just inline a redirect to the singular path:
+  try {
+    const XLSX = await import("xlsx");
+    const isStocks = type === "stocks";
+    const headers = isStocks
+      ? ["stock_code", "stock_name", "category", "sub_category", "unit_of_measure", "opening_quantity", "min_stock_level", "location", "description"]
+      : ["stock_code", "qty_requested", "distribution_date", "recipient_type", "recipient_id", "recipient_name", "location", "purpose"];
+    const sampleRow = isStocks
+      ? { stock_code: "STK-001", stock_name: "Laptop 15 inch", category: "Electronics", sub_category: "Computers", unit_of_measure: "Units", opening_quantity: 50, min_stock_level: 10, location: "Warehouse A", description: "Dell Inspiron 15" }
+      : { stock_code: "STK-001", qty_requested: 5, distribution_date: new Date().toISOString().slice(0, 10), recipient_type: "employee", recipient_id: "EMP-001", recipient_name: "John Doe", location: "Office A", purpose: "Office use" };
+    const ws = XLSX.utils.json_to_sheet([sampleRow], { header: headers });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, isStocks ? "Stocks" : "Distributions");
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${type}-upload-template.xlsx"`);
+    res.send(buf);
   } catch (err) {
     next(err);
   }

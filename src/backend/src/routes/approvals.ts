@@ -129,6 +129,7 @@ router.get(
           distributionDate: distributions.distributionDate,
           submittedAt: distributions.submittedAt,
           stockId: distributions.stockId,
+          createdBy: distributions.createdBy,
         })
         .from(approvals)
         .leftJoin(distributions, eq(approvals.distributionId, distributions.id))
@@ -137,47 +138,58 @@ router.get(
         .limit(page_size)
         .offset(offset);
 
-      // Get stock names
+      // Get stock details (name, code, uom)
       const stockIds = [...new Set(rows.map((r) => r.stockId).filter(Boolean))];
-      let stockMap: Record<number, { name: string; code: string }> = {};
+      let stockMap: Record<number, { name: string; code: string; uom: string }> = {};
       if (stockIds.length > 0) {
         const stockRows = await db
-          .select({ id: stocks.id, stockName: stocks.stockName, stockCode: stocks.stockCode })
+          .select({ id: stocks.id, stockName: stocks.stockName, stockCode: stocks.stockCode, unitOfMeasure: stocks.unitOfMeasure })
           .from(stocks)
           .where(inArray(stocks.id, stockIds as number[]));
-        stockMap = Object.fromEntries(stockRows.map((s) => [s.id, { name: s.stockName, code: s.stockCode }]));
+        stockMap = Object.fromEntries(stockRows.map((s) => [s.id, { name: s.stockName, code: s.stockCode, uom: s.unitOfMeasure }]));
       }
 
-      const items = rows.map((r) => ({
-        id: String(r.id),
-        distribution_id: String(r.distributionId),
-        transaction_code: r.transactionCode ?? "",
-        stock_name: r.stockId ? (stockMap[r.stockId]?.name ?? "") : "",
-        stock_code: r.stockId ? (stockMap[r.stockId]?.code ?? "") : "",
-        qty_requested: r.qtyRequested ?? 0,
-        uom: "",
-        recipient_name: r.recipientName ?? "",
-        recipient_type: r.recipientType ?? "",
-        purpose: r.purpose ?? "",
-        location: r.location ?? "",
-        distribution_date: r.distributionDate ?? "",
-        status: r.status,
-        risk_score: 0,
-        risk_level: (r.aiRiskLevel ?? "Low") as "Low" | "Medium" | "High",
-        ai_recommendation: (r.aiRecommendation || "Review") as "Approve" | "Review" | "Reject",
-        ai_reasoning: r.aiReasoning ?? "",
-        submitted_at: r.submittedAt?.toISOString() ?? "",
-        days_pending: r.submittedAt
-          ? Math.floor((Date.now() - r.submittedAt.getTime()) / 86400000)
-          : 0,
-        l1_approved_by: r.approvedBy ? String(r.approvedBy) : null,
-        l1_approved_at: r.approvedAt?.toISOString() ?? null,
-        l1_remarks: r.remarks ?? null,
-        l2_approved_by: r.l2ApprovedBy ? String(r.l2ApprovedBy) : null,
-        l2_approved_at: r.l2ApprovedAt?.toISOString() ?? null,
-        l2_remarks: r.l2Remarks ?? null,
-        created_by_name: "",
-      }));
+      // Get creator names via distributions.createdBy
+      const creatorIds = [...new Set(rows.map((r) => r.createdBy).filter((id): id is number => id != null))];
+      let userNameMap: Record<number, string> = {};
+      if (creatorIds.length > 0) {
+        const userRows = await db.select({ id: users.id, name: users.fullName }).from(users).where(inArray(users.id, creatorIds));
+        userNameMap = Object.fromEntries(userRows.map((u) => [u.id, u.name]));
+      }
+
+      const items = rows.map((r) => {
+        const createdBy = r.createdBy;
+        return {
+          id: String(r.id),
+          distribution_id: String(r.distributionId),
+          transaction_code: r.transactionCode ?? "",
+          stock_name: r.stockId ? (stockMap[r.stockId]?.name ?? "") : "",
+          stock_code: r.stockId ? (stockMap[r.stockId]?.code ?? "") : "",
+          qty_requested: r.qtyRequested ?? 0,
+          uom: r.stockId ? (stockMap[r.stockId]?.uom ?? "") : "",
+          recipient_name: r.recipientName ?? "",
+          recipient_type: r.recipientType ?? "",
+          purpose: r.purpose ?? "",
+          location: r.location ?? "",
+          distribution_date: r.distributionDate ?? "",
+          status: r.status,
+          risk_score: Number(r.aiRiskScore ?? 0),
+          risk_level: (r.aiRiskLevel ?? "Low") as "Low" | "Medium" | "High",
+          ai_recommendation: (r.aiRecommendation || "Review") as "Approve" | "Review" | "Reject",
+          ai_reasoning: r.aiReasoning ?? "",
+          submitted_at: r.submittedAt?.toISOString() ?? "",
+          days_pending: r.submittedAt
+            ? Math.floor((Date.now() - r.submittedAt.getTime()) / 86400000)
+            : 0,
+          l1_approved_by: r.approvedBy ? String(r.approvedBy) : null,
+          l1_approved_at: r.approvedAt?.toISOString() ?? null,
+          l1_remarks: r.remarks ?? null,
+          l2_approved_by: r.l2ApprovedBy ? String(r.l2ApprovedBy) : null,
+          l2_approved_at: r.l2ApprovedAt?.toISOString() ?? null,
+          l2_remarks: r.l2Remarks ?? null,
+          created_by_name: createdBy ? (userNameMap[createdBy] ?? "") : "",
+        };
+      });
 
       const totalNum = Number(total);
       res.json({

@@ -13,6 +13,13 @@ import uploadRouter from "./upload.js";
 import ledgerRouter from "./ledger.js";
 import auditLogRouter from "./audit-log.js";
 import reportsRouter from "./reports.js";
+import assetsRouter from "./assets.js";
+import myAssetsRouter from "./my-assets.js";
+import requestsRouter from "./requests.js";
+import assetAuditRouter from "./asset-audit.js";
+import employeesRouter from "./employees.js";
+import reconciliationRouter from "./reconciliation.js";
+import legalHoldsRouter from "./legal-holds.js";
 import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
@@ -34,6 +41,12 @@ router.use("/upload", authMiddleware, uploadRouter);
 router.use("/ledger", authMiddleware, ledgerRouter);
 router.use("/audit-log", authMiddleware, auditLogRouter);
 router.use("/reports", authMiddleware, reportsRouter);
-
+router.use("/assets", authMiddleware, assetsRouter);
+router.use("/my-assets", authMiddleware, myAssetsRouter);
+router.use("/requests", authMiddleware, requestsRouter);
+router.use("/asset-audit", authMiddleware, assetAuditRouter);
+router.use("/employees", authMiddleware, employeesRouter);
+router.use("/reconciliation", authMiddleware, reconciliationRouter);
+router.use("/legal-holds", authMiddleware, legalHoldsRouter);
 
 export default router;

@@ -96,17 +96,17 @@ router.get("/:type", async (req: Request, res: Response, next: NextFunction) => 
         if (q.date_to) conditions.push(sql`distributions.created_at <= ${new Date(q.date_to)}`);
         const data = await db
           .select({
-            transaction_code: distributions.transactionCode,
+            transaction_code: sql<string>`distributions.transaction_code`,
             stock_name: sql<string>`s.stock_name`,
-            qty_requested: distributions.qtyRequested,
-            recipient_name: distributions.recipientName,
-            location: distributions.location,
-            status: distributions.status,
-            created_at: distributions.createdAt,
+            qty_requested: sql<number>`distributions.qty_requested`,
+            recipient_name: sql<string>`distributions.recipient_name`,
+            location: sql<string>`distributions.location`,
+            status: sql<string>`distributions.status`,
+            created_at: sql<Date>`distributions.created_at`,
           })
           .from(sql`distributions JOIN stocks s ON distributions.stock_id = s.id`)
           .where(conditions.length ? sql`${sql.join(conditions, sql` AND `)}` : undefined)
-          .orderBy(desc(distributions.createdAt))
+          .orderBy(sql`distributions.created_at DESC`)
           .limit(500);
         rows = toRows(data as unknown as object[]);
         break;
@@ -126,17 +126,17 @@ router.get("/:type", async (req: Request, res: Response, next: NextFunction) => 
         if (q.risk_level) conditions.push(sql`LOWER(distributions.ai_risk_score) = LOWER(${q.risk_level})`);
         const data = await db
           .select({
-            transaction_code: distributions.transactionCode,
+            transaction_code: sql<string>`distributions.transaction_code`,
             stock_name: sql<string>`s.stock_name`,
-            qty_requested: distributions.qtyRequested,
-            recipient_name: distributions.recipientName,
-            risk_level: distributions.aiRiskScore,
-            status: distributions.status,
-            submitted_at: distributions.submittedAt,
+            qty_requested: sql<number>`distributions.qty_requested`,
+            recipient_name: sql<string>`distributions.recipient_name`,
+            risk_level: sql<string>`distributions.ai_risk_score`,
+            status: sql<string>`distributions.status`,
+            submitted_at: sql<Date>`distributions.submitted_at`,
           })
           .from(sql`distributions JOIN stocks s ON distributions.stock_id = s.id`)
           .where(sql`${sql.join(conditions, sql` AND `)}`)
-          .orderBy(desc(distributions.submittedAt))
+          .orderBy(sql`distributions.submitted_at DESC`)
           .limit(500);
         rows = toRows(data as unknown as object[]);
         break;
@@ -156,18 +156,18 @@ router.get("/:type", async (req: Request, res: Response, next: NextFunction) => 
         if (q.date_to) conditions.push(sql`approvals.updated_at <= ${new Date(q.date_to)}`);
         const data = await db
           .select({
-            transaction_code: distributions.transactionCode,
+            transaction_code: sql<string>`distributions.transaction_code`,
             stock_name: sql<string>`s.stock_name`,
-            status: distributions.status,
-            ai_recommendation: approvals.aiRecommendation,
-            risk_level: approvals.aiRiskLevel,
-            updated_at: approvals.updatedAt,
+            status: sql<string>`distributions.status`,
+            ai_recommendation: sql<string>`approvals.ai_recommendation`,
+            risk_level: sql<string>`approvals.ai_risk_level`,
+            updated_at: sql<Date>`approvals.updated_at`,
           })
           .from(
             sql`approvals JOIN distributions ON approvals.distribution_id = distributions.id JOIN stocks s ON distributions.stock_id = s.id`
           )
           .where(sql`${sql.join(conditions, sql` AND `)}`)
-          .orderBy(desc(approvals.updatedAt))
+          .orderBy(sql`approvals.updated_at DESC`)
           .limit(500);
         rows = toRows(data as unknown as object[]);
         break;
@@ -191,16 +191,16 @@ router.get("/:type", async (req: Request, res: Response, next: NextFunction) => 
           .select({
             stock_code: sql<string>`s.stock_code`,
             stock_name: sql<string>`s.stock_name`,
-            movement_type: stockLedger.movementType,
-            quantity: stockLedger.quantity,
-            balance_after: stockLedger.runningBalance,
-            performed_by: stockLedger.performedBy,
-            remarks: stockLedger.remarks,
-            performed_at: stockLedger.performedAt,
+            movement_type: sql<string>`stock_ledger.movement_type`,
+            quantity: sql<number>`stock_ledger.quantity`,
+            balance_after: sql<number>`stock_ledger.running_balance`,
+            performed_by: sql<string>`stock_ledger.performed_by`,
+            remarks: sql<string>`stock_ledger.remarks`,
+            performed_at: sql<Date>`stock_ledger.performed_at`,
           })
           .from(sql`stock_ledger JOIN stocks s ON stock_ledger.stock_id = s.id`)
           .where(conditions.length ? sql`${sql.join(conditions, sql` AND `)}` : undefined)
-          .orderBy(desc(stockLedger.performedAt))
+          .orderBy(sql`stock_ledger.performed_at DESC`)
           .limit(500);
         rows = toRows(data as unknown as object[]);
         break;
@@ -218,19 +218,15 @@ router.get("/:type", async (req: Request, res: Response, next: NextFunction) => 
         const data = await db
           .select({
             stock_code: sql<string>`s.stock_code`,
-            anomaly_type: anomalies.anomalyType,
-            severity: anomalies.severity,
-            description: anomalies.description,
-            status: anomalies.status,
-            detected_at: anomalies.detectedAt,
+            anomaly_type: sql<string>`anomalies.anomaly_type`,
+            severity: sql<string>`anomalies.severity`,
+            description: sql<string>`anomalies.description`,
+            status: sql<string>`anomalies.status`,
+            detected_at: sql<Date>`anomalies.detected_at`,
           })
           .from(sql`anomalies JOIN stocks s ON anomalies.stock_id = s.id`)
-          .where(
-            q.severity
-              ? eq(anomalies.severity, q.severity as "critical" | "warning" | "info")
-              : undefined
-          )
-          .orderBy(desc(anomalies.detectedAt))
+          .where(q.severity ? sql`anomalies.severity = ${q.severity}` : undefined)
+          .orderBy(sql`anomalies.detected_at DESC`)
           .limit(500);
         rows = toRows(data as unknown as object[]);
         break;
@@ -252,20 +248,20 @@ router.get("/:type", async (req: Request, res: Response, next: NextFunction) => 
         if (q.date_to) conditions.push(sql`approvals.updated_at <= ${new Date(q.date_to)}`);
         const data = await db
           .select({
-            transaction_code: distributions.transactionCode,
+            transaction_code: sql<string>`distributions.transaction_code`,
             stock_name: sql<string>`s.stock_name`,
-            qty_requested: distributions.qtyRequested,
-            recipient_name: distributions.recipientName,
-            ai_recommendation: approvals.aiRecommendation,
-            risk_level: approvals.aiRiskLevel,
-            remarks: approvals.remarks,
-            updated_at: approvals.updatedAt,
+            qty_requested: sql<number>`distributions.qty_requested`,
+            recipient_name: sql<string>`distributions.recipient_name`,
+            ai_recommendation: sql<string>`approvals.ai_recommendation`,
+            risk_level: sql<string>`approvals.ai_risk_level`,
+            remarks: sql<string>`approvals.remarks`,
+            updated_at: sql<Date>`approvals.updated_at`,
           })
           .from(
             sql`approvals JOIN distributions ON approvals.distribution_id = distributions.id JOIN stocks s ON distributions.stock_id = s.id`
           )
           .where(sql`${sql.join(conditions, sql` AND `)}`)
-          .orderBy(desc(approvals.updatedAt))
+          .orderBy(sql`approvals.updated_at DESC`)
           .limit(500);
         rows = toRows(data as unknown as object[]);
         break;

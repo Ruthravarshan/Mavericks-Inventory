@@ -206,7 +206,17 @@ router.get("/health-scores", async (req: Request, res: Response, next: NextFunct
       .where(and(eq(stocks.status, "active"), isNull(stocks.deletedAt)))
       .orderBy(stocks.healthScore);
 
-    res.json({ data: rows });
+    const mapped = rows.map((r) => ({
+      stock_id: String(r.id),
+      stock_code: r.stockCode,
+      stock_name: r.stockName,
+      health_score: r.healthScore,
+      health_status: r.healthScore >= 70 ? "healthy" : r.healthScore >= 40 ? "warning" : "critical",
+      available_qty: r.availableQuantity,
+      min_level: r.minStockLevel,
+    }));
+
+    res.json(mapped);
   } catch (err) {
     next(err);
   }

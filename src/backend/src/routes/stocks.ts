@@ -68,7 +68,7 @@ function toStockResponse(row: DBStock) {
     available_qty: row.availableQuantity,
     distributed_qty: Math.max(0, row.openingQuantity - row.availableQuantity),
     min_level: row.minStockLevel,
-    max_level: 0,
+    max_level: row.maxStockLevel ?? 0,
     location: row.location ?? "",
     status: row.status,
     health_score: score,
@@ -161,7 +161,7 @@ router.get("/export", async (req: Request, res: Response, next: NextFunction) =>
 
 router.post(
   "/",
-  requireRole("executive", "admin"),
+  requireRole("manager", "admin"),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const parsed = createStockSchema.safeParse(req.body);
@@ -190,6 +190,7 @@ router.post(
           availableQuantity: availQty,
           reservedQuantity: 0,
           minStockLevel: data.min_level,
+          maxStockLevel: data.max_level,
           location: data.location,
           description: data.description,
           status: data.status,

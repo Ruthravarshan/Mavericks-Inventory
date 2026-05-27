@@ -61,9 +61,11 @@ function hashKey(data: unknown): string {
 
 // ─── Azure OpenAI client ──────────────────────────────────────────────────────
 
-let openaiClient: import("@azure/openai").AzureOpenAI | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let openaiClient: any = null;
 
-async function getClient(): Promise<import("@azure/openai").AzureOpenAI | null> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getClient(): Promise<any> {
   const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
   const key = process.env.AZURE_OPENAI_KEY;
 
@@ -73,7 +75,8 @@ async function getClient(): Promise<import("@azure/openai").AzureOpenAI | null> 
 
   if (!openaiClient) {
     try {
-      const { AzureOpenAI } = await import("@azure/openai");
+      const { AzureOpenAI } = await import("openai");
+      // @ts-ignore
       openaiClient = new AzureOpenAI({
         endpoint,
         apiKey: key,
@@ -440,7 +443,67 @@ function fallbackAnomalyExplanation(anomaly: {
   );
 }
 
-// ─── 4. naturalLanguageQuery ──────────────────────────────────────────────────
+// ─── 4. generateHealthNarrative ──────────────────────────────────────────────
+
+export interface HealthNarrativeResult {
+  summary: string;
+  observations: string[];
+  recommended_actions: string[];
+}
+
+export async function generateHealthNarrative(stats: {
+  active: number;
+  healthy: number;
+  warning: number;
+  critical: number;
+  avgHealth: number;
+  totalUnits: number;
+  activeAnomalies: number;
+  criticalAnomalies: number;
+  criticalItems: Array<{ name: string; code: string; health: number; available: number; min: number }>;
+}): Promise<HealthNarrativeResult | null> {
+  const cacheKey = hashKey(stats);
+  const cached = cacheGet<HealthNarrativeResult>(cacheKey);
+  if (cached) return cached;
+
+  logger.info({ active: stats.active, avgHealth: stats.avgHealth }, "generateHealthNarrative invoked");
+
+  const systemPrompt = `You are an inventory intelligence assistant for an enterprise IT asset management system.
+Analyze inventory health metrics and return a clear, actionable JSON report.
+Return ONLY valid JSON with fields:
+- summary: string (2-3 sentence executive summary, professional tone)
+- observations: string[] (4-6 specific observations about the inventory state)
+- recommended_actions: string[] (3-5 prioritized action items)`;
+
+  const userPrompt = `Generate a health narrative for this inventory snapshot:
+Total active stocks: ${stats.active}
+Average health score: ${stats.avgHealth}/100
+Healthy items: ${stats.healthy} (${Math.round((stats.healthy / Math.max(1, stats.active)) * 100)}%)
+Warning items: ${stats.warning}
+Critical items: ${stats.critical}
+Total available units: ${stats.totalUnits}
+Active anomalies: ${stats.activeAnomalies} (${stats.criticalAnomalies} critical)
+${stats.criticalItems.length > 0 ? `\nWorst performing items:\n${stats.criticalItems.map(i => `- ${i.name} (${i.code}): health ${i.health}/100, ${i.available} units vs min ${i.min}`).join("\n")}` : ""}`;
+
+  const aiResponse = await callOpenAI(systemPrompt, userPrompt);
+
+  if (!aiResponse) return null;
+
+  try {
+    const parsed = JSON.parse(aiResponse) as HealthNarrativeResult;
+    const result: HealthNarrativeResult = {
+      summary: parsed.summary ?? "",
+      observations: Array.isArray(parsed.observations) ? parsed.observations : [],
+      recommended_actions: Array.isArray(parsed.recommended_actions) ? parsed.recommended_actions : [],
+    };
+    cacheSet(cacheKey, result);
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+// ─── 5. naturalLanguageQuery ──────────────────────────────────────────────────
 
 const FORBIDDEN_KEYWORDS = [
   "drop",
@@ -485,7 +548,8 @@ Rules:
 
   try {
     const parsed = JSON.parse(aiResponse) as NLQueryResult;
-    const sql = parsed.sql ?? "";
+    // Strip trailing semicolon — valid SQL but triggers the ; guard below
+    const sql = (parsed.sql ?? "").replace(/;\s*$/, "");
 
     // Validate SQL is read-only
     const lowerSql = sql.toLowerCase();

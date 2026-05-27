@@ -1,4 +1,5 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Navigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRightLeft,
   CheckSquare,
@@ -43,6 +44,28 @@ import { cn } from "@/lib/utils";
 
 const COLORS = ["#14b8a6", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6"];
 
+function useCountUp(target: number, duration = 900) {
+  const [count, setCount] = useState(0);
+  const raf = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (typeof target !== "number") return;
+    const start = performance.now();
+    const from = 0;
+    function tick(now: number) {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCount(Math.round(from + (target - from) * eased));
+      if (progress < 1) raf.current = requestAnimationFrame(tick);
+    }
+    raf.current = requestAnimationFrame(tick);
+    return () => { if (raf.current) cancelAnimationFrame(raf.current); };
+  }, [target, duration]);
+
+  return count;
+}
+
 function StatCard({
   title,
   value,
@@ -50,6 +73,7 @@ function StatCard({
   trend,
   color = "teal",
   onClick,
+  index = 0,
 }: {
   title: string;
   value: number | string;
@@ -57,6 +81,7 @@ function StatCard({
   trend?: { value: number; positive: boolean };
   color?: string;
   onClick?: () => void;
+  index?: number;
 }) {
   const colorMap: Record<string, string> = {
     teal: "bg-teal-500/20 text-teal-400",
@@ -67,16 +92,21 @@ function StatCard({
     purple: "bg-purple-500/20 text-purple-400",
   };
 
+  const numericValue = typeof value === "number" ? value : NaN;
+  const animated = useCountUp(isNaN(numericValue) ? 0 : numericValue);
+  const displayValue = isNaN(numericValue) ? value : formatNumber(animated);
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+      initial={{ opacity: 0, y: 20, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.4, delay: index * 0.07, ease: [0.22, 1, 0.36, 1] }}
+      whileHover={{ y: -3, transition: { duration: 0.2 } }}
     >
       <Card
         className={cn(
-          "bg-slate-800/50 border-slate-700/50",
-          onClick && "cursor-pointer hover:border-[hsl(var(--primary))]/40 transition-colors"
+          "bg-slate-800/50 border-slate-700/50 transition-all",
+          onClick && "cursor-pointer hover:border-[hsl(var(--primary))]/40 hover:shadow-lg hover:shadow-[hsl(var(--primary))]/5"
         )}
         onClick={onClick}
       >
@@ -84,8 +114,8 @@ function StatCard({
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm text-[hsl(var(--muted-foreground))]">{title}</p>
-              <p className="mt-2 text-3xl font-bold text-[hsl(var(--foreground))]">
-                {typeof value === "number" ? formatNumber(value) : value}
+              <p className="mt-2 text-3xl font-bold tabular-nums text-[hsl(var(--foreground))]">
+                {displayValue}
               </p>
               {trend && (
                 <div className="mt-1 flex items-center gap-1 text-xs">
@@ -100,9 +130,13 @@ function StatCard({
                 </div>
               )}
             </div>
-            <div className={cn("rounded-lg p-3", colorMap[color] ?? colorMap.teal)}>
+            <motion.div
+              whileHover={{ rotate: 12, scale: 1.1 }}
+              transition={{ duration: 0.2 }}
+              className={cn("rounded-lg p-3", colorMap[color] ?? colorMap.teal)}
+            >
               <Icon className="h-5 w-5" />
-            </div>
+            </motion.div>
           </div>
         </CardContent>
       </Card>
@@ -145,6 +179,7 @@ function ExecutiveDashboard() {
       {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
+          index={0}
           title="My Distributions"
           value={summary?.my_distributions ?? 0}
           icon={ArrowRightLeft}
@@ -152,6 +187,7 @@ function ExecutiveDashboard() {
           onClick={() => navigate("/distributions")}
         />
         <StatCard
+          index={1}
           title="Pending Approval"
           value={summary?.my_pending ?? 0}
           icon={Clock}
@@ -159,12 +195,14 @@ function ExecutiveDashboard() {
           onClick={() => navigate("/distributions")}
         />
         <StatCard
+          index={2}
           title="Approved"
           value={summary?.my_approved ?? 0}
           icon={CheckSquare}
           color="green"
         />
         <StatCard
+          index={3}
           title="Rejected"
           value={summary?.my_rejected ?? 0}
           icon={AlertTriangle}
@@ -174,49 +212,57 @@ function ExecutiveDashboard() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Stock Availability */}
-        <Card className="bg-slate-800/50 border-slate-700/50">
-          <CardHeader>
-            <CardTitle className="text-base">Stock Availability (Top 5 Categories)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={summary?.top_distributed_items?.slice(0, 5) ?? []}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="stock_name" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px" }}
-                />
-                <Bar dataKey="total_qty" fill="#14b8a6" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3, duration: 0.4 }}>
+          <Card className="bg-slate-800/50 border-slate-700/50">
+            <CardHeader>
+              <CardTitle className="text-base">Stock Availability (Top 5 Categories)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={summary?.top_distributed_items?.slice(0, 5) ?? []}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="stock_name" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                  <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px" }} />
+                  <Bar dataKey="total_qty" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </motion.div>
 
         {/* Recent Activity */}
-        <Card className="bg-slate-800/50 border-slate-700/50">
-          <CardHeader>
-            <CardTitle className="text-base">Recent Activity</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {activity.slice(0, 6).map((item) => (
-                <div key={item.id} className="flex items-start gap-3">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--primary))]/15">
-                    <Activity className="h-3.5 w-3.5 text-[hsl(var(--primary))]" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-[hsl(var(--foreground))]">{item.description}</p>
-                    <p className="text-xs text-[hsl(var(--muted-foreground))]">{formatRelativeTime(item.created_at)}</p>
-                  </div>
-                </div>
-              ))}
-              {activity.length === 0 && (
-                <p className="text-sm text-[hsl(var(--muted-foreground))] text-center py-8">No recent activity</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38, duration: 0.4 }}>
+          <Card className="bg-slate-800/50 border-slate-700/50">
+            <CardHeader>
+              <CardTitle className="text-base">Recent Activity</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {activity.slice(0, 6).map((item, i) => (
+                  <motion.div
+                    key={item.id}
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.45 + i * 0.05, duration: 0.3 }}
+                    className="flex items-start gap-3"
+                  >
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--primary))]/15">
+                      <Activity className="h-3.5 w-3.5 text-[hsl(var(--primary))]" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-[hsl(var(--foreground))]">{item.description}</p>
+                      <p className="text-xs text-[hsl(var(--muted-foreground))]">{formatRelativeTime(item.created_at)}</p>
+                    </div>
+                  </motion.div>
+                ))}
+                {activity.length === 0 && (
+                  <p className="text-sm text-[hsl(var(--muted-foreground))] text-center py-8">No recent activity</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
     </div>
   );
@@ -265,6 +311,7 @@ function ManagerDashboard() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
+          index={0}
           title="Active Anomalies"
           value={summary?.active_anomalies ?? 0}
           icon={AlertTriangle}
@@ -272,6 +319,7 @@ function ManagerDashboard() {
           onClick={() => navigate("/anomalies")}
         />
         <StatCard
+          index={1}
           title="Critical Anomalies"
           value={summary?.critical_anomalies ?? 0}
           icon={AlertTriangle}
@@ -279,6 +327,7 @@ function ManagerDashboard() {
           onClick={() => navigate("/anomalies")}
         />
         <StatCard
+          index={2}
           title="Total Distributions"
           value={summary?.total_distributions ?? 0}
           icon={ArrowRightLeft}
@@ -397,9 +446,10 @@ function AdminDashboard() {
 
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="Total Users" value={stats?.total_users ?? 0} icon={Users} color="blue" />
-        <StatCard title="Total Stocks" value={summary?.total_stocks ?? 0} icon={Database} color="teal" />
+        <StatCard index={0} title="Total Users" value={stats?.total_users ?? 0} icon={Users} color="blue" />
+        <StatCard index={1} title="Total Stocks" value={summary?.total_stocks ?? 0} icon={Database} color="teal" />
         <StatCard
+          index={2}
           title="Pending Approvals"
           value={summary?.pending_approvals ?? 0}
           icon={CheckSquare}
@@ -407,6 +457,7 @@ function AdminDashboard() {
           onClick={() => navigate("/approvals")}
         />
         <StatCard
+          index={3}
           title="Active Anomalies"
           value={summary?.active_anomalies ?? 0}
           icon={AlertTriangle}
@@ -527,8 +578,9 @@ function DashboardSkeleton() {
 }
 
 export default function DashboardPage() {
-  const { isAdmin, isManager, isL2 } = useAuth();
+  const { isAdmin, isManager, isL2, isUser } = useAuth();
 
+  if (isUser) return <Navigate to="/my-assets" replace />;
   if (isAdmin) return <AdminDashboard />;
   if (isManager || isL2) return <ManagerDashboard />;
   return <ExecutiveDashboard />;

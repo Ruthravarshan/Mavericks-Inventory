@@ -9,13 +9,15 @@ interface AuthContextValue {
   user: User | null;
   accessToken: string | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
   isAdmin: boolean;
   isManager: boolean;
   isExecutive: boolean;
   isL2: boolean;
+  isUser: boolean;
   isManagerOrAbove: boolean;
+  isRegularUser: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -49,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [accessToken, user]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string): Promise<User> => {
     setIsLoading(true);
     try {
       const res = await authApi.login(email, password);
@@ -58,6 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(USER_KEY, JSON.stringify(userData));
       setAccessToken(access_token);
       setUser(userData);
+      return userData;
     } finally {
       setIsLoading(false);
     }
@@ -79,7 +82,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isManager = user?.role === ROLES.MANAGER;
   const isExecutive = user?.role === ROLES.EXECUTIVE;
   const isL2 = user?.role === ROLES.L2;
+  const isUser = user?.role === ROLES.USER;
   const isManagerOrAbove = isAdmin || isManager || isL2;
+  const isRegularUser = isUser || isExecutive;
 
   return (
     <AuthContext.Provider
@@ -93,7 +98,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isManager,
         isExecutive,
         isL2,
+        isUser,
         isManagerOrAbove,
+        isRegularUser,
       }}
     >
       {children}

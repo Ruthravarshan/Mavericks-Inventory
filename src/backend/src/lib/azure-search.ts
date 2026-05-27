@@ -180,7 +180,7 @@ export async function deleteIndex(id: number): Promise<void> {
   if (!client) return;
 
   try {
-    await client.deleteDocuments([{ id: String(id) }]);
+    await client.deleteDocuments([{ id: String(id) } as StockSearchDoc]);
     logger.debug({ stockId: id }, "Stock item removed from Azure Search index");
   } catch (err) {
     logger.error({ err, stockId: id }, "Failed to delete from Azure Search index");

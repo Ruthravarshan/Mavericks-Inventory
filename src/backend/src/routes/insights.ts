@@ -4,7 +4,7 @@ import { db } from "../db/index.js";
 import { stocks, anomalies } from "../db/schema/index.js";
 import { sql, eq, and, isNull } from "drizzle-orm";
 import { pool } from "../db/index.js";
-import { naturalLanguageQuery } from "../lib/azure-openai.js";
+import { naturalLanguageQuery, generateHealthNarrative } from "../lib/azure-openai.js";
 import logger from "../lib/logger.js";
 
 const router = Router();
@@ -82,63 +82,57 @@ router.get("/inventory-health", async (req: Request, res: Response, next: NextFu
       .orderBy(stocks.healthScore)
       .limit(5);
 
-    // Build narrative (AI-enhanced if available, stat-based fallback)
-    let narrative: string | null = null;
-
-    try {
-      const healthPct = Math.round(
-        (Number(stockStats.healthy) / Math.max(1, Number(stockStats.active))) * 100
-      );
-      const avgHealth = Math.round(Number(stockStats.avgHealth));
-
-      narrative = `Inventory Health Summary: ${Number(stockStats.active)} active stock items tracked. ` +
-        `Average health score: ${avgHealth}/100. ` +
-        `${Number(stockStats.healthy)} items (${healthPct}%) are healthy, ` +
-        `${Number(stockStats.warning)} are in warning state, and ` +
-        `${Number(stockStats.critical)} are critical. ` +
-        `There are ${Number(anomalyStats.active)} active anomalies ` +
-        `(${Number(anomalyStats.critical)} critical). ` +
-        (Number(stockStats.critical) > 0
-          ? `Immediate attention required for ${Number(stockStats.critical)} critical stock item(s).`
-          : `Overall inventory health is satisfactory.`);
-    } catch {
-      narrative = null;
-    }
-
-    // Fallback narrative
-    if (!narrative) {
-      const healthPct = Math.round(
-        (Number(stockStats.healthy) / Math.max(1, Number(stockStats.active))) * 100
-      );
-      narrative =
-        `Inventory contains ${Number(stockStats.active)} active items. ` +
-        `${healthPct}% are in healthy state. ` +
-        `${Number(anomalyStats.active)} anomalies require attention.`;
-    }
-
     const avgHealth = Math.round(Number(stockStats.avgHealth));
     const criticalCount = Number(stockStats.critical);
     const warningCount = Number(stockStats.warning);
     const healthyCount = Number(stockStats.healthy);
 
-    const observations: string[] = [
+    // Try AI-generated narrative first
+    const aiNarrative = await generateHealthNarrative({
+      active: Number(stockStats.active),
+      healthy: healthyCount,
+      warning: warningCount,
+      critical: criticalCount,
+      avgHealth,
+      totalUnits: Math.round(Number(stockStats.totalUnits)),
+      activeAnomalies: Number(anomalyStats.active),
+      criticalAnomalies: Number(anomalyStats.critical),
+      criticalItems: criticalItems.map((s) => ({
+        name: s.stockName,
+        code: s.stockCode,
+        health: Math.round(s.healthScore),
+        available: s.availableQuantity,
+        min: s.minStockLevel,
+      })),
+    });
+
+    // Build fallback observations and actions
+    const fallbackObservations: string[] = [
       `${healthyCount} stocks healthy, ${warningCount} warning, ${criticalCount} critical`,
       `${Number(anomalyStats.active)} active anomalies (${Number(anomalyStats.critical)} critical)`,
       ...criticalItems.map((s) => `${s.stockName} (${s.stockCode}) health: ${Math.round(s.healthScore)}/100 — ${s.availableQuantity} units vs min ${s.minStockLevel}`),
     ];
 
-    const recommended_actions: string[] = [
+    const fallbackActions: string[] = [
       ...(criticalCount > 0 ? [`Replenish ${criticalCount} critical stock item(s) immediately`] : []),
       ...(warningCount > 0 ? [`Review ${warningCount} stock item(s) in warning state`] : []),
       ...(Number(anomalyStats.critical) > 0 ? [`Resolve ${Number(anomalyStats.critical)} critical anomaly/anomalies`] : []),
       ...(criticalCount === 0 && warningCount === 0 ? ["Inventory levels are within acceptable thresholds"] : []),
     ];
 
+    const fallbackSummary =
+      `Inventory Health Summary: ${Number(stockStats.active)} active stock items. ` +
+      `Average health score: ${avgHealth}/100. ` +
+      `${healthyCount} healthy (${Math.round((healthyCount / Math.max(1, Number(stockStats.active))) * 100)}%), ` +
+      `${warningCount} warning, ${criticalCount} critical. ` +
+      `${Number(anomalyStats.active)} active anomalies.`;
+
     const result = {
-      summary: narrative,
-      observations,
-      recommended_actions,
+      summary: aiNarrative?.summary ?? fallbackSummary,
+      observations: aiNarrative?.observations?.length ? aiNarrative.observations : fallbackObservations,
+      recommended_actions: aiNarrative?.recommended_actions?.length ? aiNarrative.recommended_actions : fallbackActions,
       health_score: avgHealth,
+      ai_enhanced: !!aiNarrative,
       last_refreshed: new Date().toISOString(),
     };
 

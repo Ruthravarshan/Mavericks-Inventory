@@ -97,6 +97,11 @@ export const authApi = {
     api.post<{ accessToken: string; user: import("@/types").User }>("/auth/login", { email, password }),
   logout: () => api.post("/auth/logout"),
   me: () => api.get<import("@/types").User>("/auth/me"),
+  changePassword: (oldPassword: string, newPassword: string) =>
+    api.post<{ message: string }>("/auth/change-password", {
+      old_password: oldPassword,
+      new_password: newPassword,
+    }),
 };
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
@@ -243,3 +248,131 @@ export const auditApi = {
   list: (params?: import("@/types").AuditListParams) =>
     api.get<import("@/types").PaginatedResponse<import("@/types").AuditEntry>>("/audit-log", { params }),
 };
+
+// ─── Assets ───────────────────────────────────────────────────────────────────
+export const assetsApi = {
+  list: (params?: import("@/types").AssetListParams) =>
+    api.get<import("@/types").PaginatedResponse<import("@/types").Asset>>("/assets", { params }),
+  get: (id: string) => api.get<import("@/types").Asset>(`/assets/${id}`),
+  create: (data: import("@/types").CreateAssetRequest) =>
+    api.post<import("@/types").Asset>("/assets", data),
+  update: (id: string, data: Partial<import("@/types").CreateAssetRequest>) =>
+    api.put<import("@/types").Asset>(`/assets/${id}`, data),
+  delete: (id: string) => api.delete(`/assets/${id}`),
+  assign: (id: string, data: { employee_id: string; validity_date?: string; purpose?: string; notes?: string }) =>
+    api.post(`/assets/${id}/assign`, data),
+  return: (id: string, notes?: string) =>
+    api.post(`/assets/${id}/return`, { notes }),
+};
+
+// ─── My Assets ────────────────────────────────────────────────────────────────
+export const myAssetsApi = {
+  list: () => api.get<{ items: import("@/types").MyAsset[]; total: number }>("/my-assets"),
+  history: (params?: { page?: number; page_size?: number }) =>
+    api.get<import("@/types").PaginatedResponse<import("@/types").MyAsset>>("/my-assets/history", { params }),
+  audits: () => api.get<{ items: import("@/types").AssetAudit[] }>("/my-assets/audits"),
+};
+
+// ─── Asset Requests ───────────────────────────────────────────────────────────
+export const requestsApi = {
+  list: (params?: import("@/types").RequestListParams) =>
+    api.get<import("@/types").PaginatedResponse<import("@/types").AssetRequest>>("/requests", { params }),
+  create: (data: import("@/types").CreateItemRequest) =>
+    api.post<{ id: string; request_code: string; status: string; message: string }>("/requests", data),
+  approve: (id: string, notes?: string, asset_id?: string) =>
+    api.post(`/requests/${id}/approve`, { review_notes: notes, asset_id }),
+  reject: (id: string, notes: string) =>
+    api.post(`/requests/${id}/reject`, { review_notes: notes }),
+  fulfill: (id: string, asset_id: string, validity_date?: string, notes?: string) =>
+    api.post(`/requests/${id}/fulfill`, { asset_id, validity_date, notes }),
+};
+
+// ─── Asset Audit ──────────────────────────────────────────────────────────────
+export const assetAuditApi = {
+  list: (params?: { page?: number; page_size?: number; needs_review?: boolean }) =>
+    api.get<import("@/types").PaginatedResponse<import("@/types").AssetAudit>>("/asset-audit", { params }),
+  submit: (asset_id: string, files: File[], audit_type?: string, notes?: string, onProgress?: (pct: number) => void) => {
+    const form = new FormData();
+    form.append("asset_id", asset_id);
+    if (audit_type) form.append("audit_type", audit_type);
+    if (notes) form.append("notes", notes);
+    files.forEach((f) => form.append("media", f));
+    return api.post<{ audit_id: string; audit_code: string; status: string; message: string }>(
+      "/asset-audit/submit",
+      form,
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (e) => {
+          if (onProgress && e.total) onProgress(Math.round((e.loaded * 100) / e.total));
+        },
+      }
+    );
+  },
+  humanReview: (id: string, final_status: string, review_notes?: string) =>
+    api.post(`/asset-audit/${id}/human-review`, { final_status, review_notes }),
+};
+
+// ─── Employees ────────────────────────────────────────────────────────────────
+export const employeesApi = {
+  list: (params?: { page?: number; page_size?: number; search?: string; department?: string }) =>
+    api.get<import("@/types").PaginatedResponse<import("@/types").Employee>>("/employees", { params }),
+  getAssets: (employeeId: string) =>
+    api.get<{ items: import("@/types").EmployeeAsset[]; total: number }>(`/employees/${employeeId}/assets`),
+};
+
+// ─── Reconciliation ───────────────────────────────────────────────────────────
+export const reconciliationApi = {
+  list: () =>
+    api.get<{
+      items: ReconciliationItem[];
+      total: number;
+      summary: { matched: number; variance: number; draft_adjustment: number; pending: number };
+    }>("/reconciliation"),
+  submitCount: (stock_id: string, physical_qty: number) =>
+    api.post<{ ok: boolean; stock_id: string; physical_qty: number }>("/reconciliation/count", { stock_id, physical_qty }),
+  reset: () => api.post<{ ok: boolean; message: string }>("/reconciliation/reset"),
+};
+
+export interface ReconciliationItem {
+  id: string;
+  stock_code: string;
+  stock_name: string;
+  category: string;
+  location: string;
+  system_qty: number;
+  physical_qty: number | null;
+  variance: number | null;
+  status: "matched" | "variance" | "pending" | "draft_adjustment";
+  last_counted: string | null;
+  counted_by: string | null;
+}
+
+// ─── Legal Holds ──────────────────────────────────────────────────────────────
+export const legalHoldsApi = {
+  list: (params?: { status?: string; search?: string }) =>
+    api.get<{
+      items: LegalHoldItem[];
+      total: number;
+      active_count: number;
+      total_locked: number;
+    }>("/legal-holds", { params }),
+  get: (id: string) => api.get<LegalHoldItem>(`/legal-holds/${id}`),
+  create: (data: { title: string; scope: string; reason: string; case_number: string; records_locked?: number }) =>
+    api.post<LegalHoldItem>("/legal-holds", data),
+  release: (id: string) => api.post<LegalHoldItem>(`/legal-holds/${id}/release`),
+};
+
+export interface LegalHoldItem {
+  id: number;
+  hold_reference: string;
+  title: string;
+  scope: "transaction" | "stock_master" | "user_records";
+  status: "active" | "released";
+  records_locked: number;
+  initiated_by: string;
+  initiated_at: string;
+  reason: string;
+  case_number: string;
+  released_at: string | null;
+  released_by: string | null;
+}

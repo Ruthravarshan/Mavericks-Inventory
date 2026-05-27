@@ -27,6 +27,7 @@ export const stocks = pgTable("stocks", {
   availableQuantity: real("available_quantity").notNull().default(0),
   reservedQuantity: real("reserved_quantity").notNull().default(0),
   minStockLevel: real("min_stock_level").notNull().default(0),
+  maxStockLevel: real("max_stock_level").notNull().default(0),
   location: text("location"),
   description: text("description"),
   assetTagPrefix: text("asset_tag_prefix"),

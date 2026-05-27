@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const userRoleEnum = pgEnum("user_role", [
+  "user",
   "executive",
   "manager",
   "management_authority",
@@ -21,9 +22,12 @@ export const users = pgTable("users", {
   fullName: text("full_name").notNull(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
-  role: userRoleEnum("role").notNull().default("executive"),
+  role: userRoleEnum("role").notNull().default("user"),
   department: text("department"),
+  designation: text("designation"),
   location: text("location"),
+  managerId: integer("manager_id"),
+  onboardingDate: timestamp("onboarding_date"),
   isActive: boolean("is_active").notNull().default(true),
   failedLoginAttempts: integer("failed_login_attempts").notNull().default(0),
   lockedUntil: timestamp("locked_until"),

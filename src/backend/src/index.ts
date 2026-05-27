@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "dotenv/config"; // loads .env — Azure OpenAI + Storage + Search credentials (restart: fix NLQ semicolon guard)
 import cron from "node-cron";
 import app from "./app.js";
 import logger from "./lib/logger.js";

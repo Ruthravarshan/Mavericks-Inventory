@@ -1,0 +1,77 @@
+{
+  "timestamp": "2026-05-26T17:28:52.277Z",
+  "base_url": "http://localhost:8080/api/v1",
+  "elapsed_seconds": 48,
+  "summary": {
+    "passed": 170,
+    "failed": 16,
+    "skipped": 1,
+    "total": 187
+  },
+  "failed_tests": [
+    {
+      "name": "  → created.max_level = 100",
+      "detail": ""
+    },
+    {
+      "name": "POST /stocks by executive → 403 (role guard)",
+      "detail": "got 500, expected 403. Body: {\"error_code\":\"INTERNAL_SERVER_ERROR\",\"message\":\"Failed query: insert into \\\"stocks\\\" (\\\"id\\\", \\\"stock_code\\\", \\\"stock_n"
+    },
+    {
+      "name": "GET /approvals (manager)",
+      "detail": "got 500, expected 200. Body: {\"error_code\":\"INTERNAL_SERVER_ERROR\",\"message\":\"Cannot convert undefined or null to object\",\"stack\":\"TypeError: Cannot "
+    },
+    {
+      "name": "GET /approvals?level=l1",
+      "detail": "got 500, expected 200. Body: {\"error_code\":\"INTERNAL_SERVER_ERROR\",\"message\":\"Cannot convert undefined or null to object\",\"stack\":\"TypeError: Cannot "
+    },
+    {
+      "name": "GET /audit-log by executive → 403",
+      "detail": "got 200, expected 403. Body: {\"items\":[{\"id\":\"50\",\"event_type\":\"anomaly_resolved\",\"description\":\"Anomaly 16 (zero_stock) resolved by Inventory Manage"
+    },
+    {
+      "name": "  → has id",
+      "detail": ""
+    },
+    {
+      "name": "GET /admin/system-stats",
+      "detail": "got 500, expected 200. Body: {\"error_code\":\"INTERNAL_SERVER_ERROR\",\"message\":\"Your \\\"transaction_code\\\" field references a column \\\"distributions\\\".\\"
+    },
+    {
+      "name": "GET /reports/distribution-history",
+      "detail": "got 500, expected 200. Body: {\"error_code\":\"INTERNAL_SERVER_ERROR\",\"message\":\"Your \\\"transaction_code\\\" field references a column \\\"distributions\\\".\\"
+    },
+    {
+      "name": "GET /reports/pending-approvals",
+      "detail": "got 500, expected 200. Body: {\"error_code\":\"INTERNAL_SERVER_ERROR\",\"message\":\"Your \\\"transaction_code\\\" field references a column \\\"distributions\\\".\\"
+    },
+    {
+      "name": "GET /reports/approval-history",
+      "detail": "got 500, expected 200. Body: {\"error_code\":\"INTERNAL_SERVER_ERROR\",\"message\":\"Your \\\"transaction_code\\\" field references a column \\\"distributions\\\".\\"
+    },
+    {
+      "name": "GET /reports/stock-ledger",
+      "detail": "got 500, expected 200. Body: {\"error_code\":\"INTERNAL_SERVER_ERROR\",\"message\":\"Your \\\"movement_type\\\" field references a column \\\"stock_ledger\\\".\\\"mov"
+    },
+    {
+      "name": "GET /reports/anomaly-history",
+      "detail": "got 500, expected 200. Body: {\"error_code\":\"INTERNAL_SERVER_ERROR\",\"message\":\"Your \\\"anomaly_type\\\" field references a column \\\"anomalies\\\".\\\"anomaly"
+    },
+    {
+      "name": "GET /reports/rejection-analysis",
+      "detail": "got 500, expected 200. Body: {\"error_code\":\"INTERNAL_SERVER_ERROR\",\"message\":\"Your \\\"transaction_code\\\" field references a column \\\"distributions\\\".\\"
+    },
+    {
+      "name": "GET /upload/jobs?type=stocks (history)",
+      "detail": "got 429, expected 200. Body: {\"error_code\":\"UPLOAD_RATE_LIMIT\",\"message\":\"Upload rate limit exceeded, please wait before uploading again\"}"
+    },
+    {
+      "name": "GET /upload/jobs (all history)",
+      "detail": "got 429, expected 200. Body: {\"error_code\":\"UPLOAD_RATE_LIMIT\",\"message\":\"Upload rate limit exceeded, please wait before uploading again\"}"
+    },
+    {
+      "name": "GET /audit-log by exec → 403",
+      "detail": "got 200, expected 403. Body: {\"items\":[{\"id\":\"52\",\"event_type\":\"upload_started\",\"description\":\"Stock master upload started: test-stocks-clean.xlsx\",\""
+    }
+  ]
+}
