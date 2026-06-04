@@ -1,8 +1,10 @@
 import * as React from "react";
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
 
-const TOAST_LIMIT = 1;
-const TOAST_REMOVE_DELAY = 1000000;
+// Show up to 3 toasts at once so rapid errors aren't swallowed.
+const TOAST_LIMIT = 3;
+// 4s before a dismissed toast is unmounted (was 16 min — memory leak).
+const TOAST_REMOVE_DELAY = 4000;
 
 type ToasterToast = ToastProps & {
   id: string;
@@ -28,22 +30,10 @@ function genId() {
 type ActionType = typeof actionTypes;
 
 type Action =
-  | {
-      type: ActionType["ADD_TOAST"];
-      toast: ToasterToast;
-    }
-  | {
-      type: ActionType["UPDATE_TOAST"];
-      toast: Partial<ToasterToast>;
-    }
-  | {
-      type: ActionType["DISMISS_TOAST"];
-      toastId?: ToasterToast["id"];
-    }
-  | {
-      type: ActionType["REMOVE_TOAST"];
-      toastId?: ToasterToast["id"];
-    };
+  | { type: ActionType["ADD_TOAST"]; toast: ToasterToast }
+  | { type: ActionType["UPDATE_TOAST"]; toast: Partial<ToasterToast> }
+  | { type: ActionType["DISMISS_TOAST"]; toastId?: ToasterToast["id"] }
+  | { type: ActionType["REMOVE_TOAST"]; toastId?: ToasterToast["id"] };
 
 interface State {
   toasts: ToasterToast[];
@@ -165,6 +155,9 @@ function toast({ ...props }: Toast) {
 function useToast() {
   const [state, setState] = React.useState<State>(memoryState);
 
+  // Subscribe once on mount; unsubscribe on unmount. The previous version had
+  // `[state]` in the dep array, which re-pushed the listener on every state
+  // change → exponential listener growth.
   React.useEffect(() => {
     listeners.push(setState);
     return () => {
@@ -173,7 +166,7 @@ function useToast() {
         listeners.splice(index, 1);
       }
     };
-  }, [state]);
+  }, []);
 
   return {
     ...state,

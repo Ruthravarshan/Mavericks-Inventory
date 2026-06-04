@@ -283,25 +283,30 @@ export default function MyRequestsPage() {
 
   return (
     <div className="space-y-6">
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex items-start gap-3 min-w-0">
           <Button
             variant="ghost"
             size="icon"
             onClick={() => navigate("/my-assets")}
             className="shrink-0"
+            aria-label="Back"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold text-[hsl(var(--foreground))]">My Requests</h1>
-            <p className="text-sm text-[hsl(var(--muted-foreground))]">
+          <div className="min-w-0">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))]/70">
+              Workspace
+            </div>
+            <h1 className="text-2xl font-semibold leading-tight tracking-tight text-[hsl(var(--foreground))]">
+              My Requests
+            </h1>
+            <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
               Track the lifecycle of all your IT asset requests
             </p>
           </div>
         </div>
-        <Button onClick={() => navigate("/make-request")} className="gap-2">
+        <Button size="sm" onClick={() => navigate("/make-request")}>
           <Plus className="h-4 w-4" />
           New Request
         </Button>

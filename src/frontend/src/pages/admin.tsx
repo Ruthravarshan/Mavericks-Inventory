@@ -3,7 +3,8 @@ import { useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus, Loader2, UserCheck, UserX } from "lucide-react";
+import { Plus, Loader2, UserCheck, UserX, X, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   useGetAdminUsers,
   useCreateUser,
@@ -13,7 +14,14 @@ import {
   useGetSystemStats,
   useGetSystemConfig,
   useUpdateSystemConfig,
+  useCategories,
+  useUOM,
+  useLocations,
+  useGetNavVisibility,
+  useUpdateNavVisibility,
 } from "@/hooks/use-queries";
+import { getRoleNav, CONFIGURABLE_ROLES } from "@/lib/nav";
+import { configApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,7 +34,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 import { formatRelativeTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { ROLE_LABELS, LOCATIONS } from "@/lib/constants";
+import { ROLE_LABELS, QUERY_KEYS } from "@/lib/constants";
 import type { CreateUserRequest } from "@/types";
 
 const userSchema = z.object({
@@ -41,14 +49,13 @@ const userSchema = z.object({
 
 type UserFormValues = z.infer<typeof userSchema>;
 
-function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function AddUserModal({ open, onClose, locationsList }: { open: boolean; onClose: () => void; locationsList: string[] }) {
   const createUser = useCreateUser();
 
   const {
     register,
     handleSubmit,
     setValue,
-    watch,
     reset,
     formState: { errors },
   } = useForm<UserFormValues>({ resolver: zodResolver(userSchema) });
@@ -113,7 +120,7 @@ function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void })
               <Select onValueChange={(v) => setValue("location", v)}>
                 <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
-                  {LOCATIONS.map((l) => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                  {locationsList.map((l) => <SelectItem key={l} value={l}>{l}</SelectItem>)}
                 </SelectContent>
               </Select>
               {errors.location && <p className="text-xs text-red-400">{errors.location.message}</p>}
@@ -137,7 +144,7 @@ function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void })
   );
 }
 
-function UsersTab() {
+function UsersTab({ locationsList }: { locationsList: string[] }) {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
@@ -248,7 +255,7 @@ function UsersTab() {
         </Table>
       </div>
 
-      <AddUserModal open={showAddModal} onClose={() => setShowAddModal(false)} />
+      <AddUserModal open={showAddModal} onClose={() => setShowAddModal(false)} locationsList={locationsList} />
     </div>
   );
 }
@@ -266,7 +273,7 @@ function SystemHealthTab() {
   return (
     <div className="space-y-6">
       {/* Services */}
-      <Card className="bg-slate-800/50 border-slate-700/50">
+      <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
         <CardHeader>
           <CardTitle className="text-base">Service Status</CardTitle>
         </CardHeader>
@@ -275,7 +282,7 @@ function SystemHealthTab() {
             {isLoading
               ? Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-20" />)
               : health?.services.map((svc) => (
-                  <div key={svc.name} className="rounded-lg border border-[hsl(var(--border))] bg-slate-900/50 p-3">
+                  <div key={svc.name} className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/30 p-3">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">{svc.name}</span>
                       <span className={cn("h-2.5 w-2.5 rounded-full", statusDot[svc.status])} />
@@ -300,7 +307,7 @@ function SystemHealthTab() {
           { label: "Total Stocks", value: stats?.total_stocks ?? "—" },
           { label: "Total Distributions", value: stats?.total_distributions ?? "—" },
         ].map(({ label, value }) => (
-          <Card key={label} className="bg-slate-800/50 border-slate-700/50">
+          <Card key={label} className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
             <CardContent className="p-4">
               <p className="text-sm text-[hsl(var(--muted-foreground))]">{label}</p>
               <p className="mt-1 text-2xl font-bold">{value}</p>
@@ -311,7 +318,7 @@ function SystemHealthTab() {
 
       {/* Bottlenecks */}
       {(stats?.pending_over_48h?.length ?? 0) > 0 && (
-        <Card className="bg-slate-800/50 border-red-500/20">
+        <Card className="bg-[hsl(var(--card))] border-red-500/20">
           <CardHeader>
             <CardTitle className="text-base text-red-400">Approval Bottlenecks (&gt;48h)</CardTitle>
           </CardHeader>
@@ -339,7 +346,7 @@ function ConfigTab() {
   const [form, setForm] = useState<Record<string, string | number>>({});
 
   function getVal(key: string, fallback: string | number) {
-    return form[key] !== undefined ? form[key] : (config as Record<string, unknown>)?.[key] ?? fallback;
+    return form[key] !== undefined ? form[key] : (config as Record<string, unknown> | undefined)?.[key] ?? fallback;
   }
 
   async function handleSave() {
@@ -358,7 +365,7 @@ function ConfigTab() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <Card className="bg-slate-800/50 border-slate-700/50">
+      <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
         <CardHeader>
           <CardTitle className="text-base">Approval Thresholds</CardTitle>
         </CardHeader>
@@ -393,7 +400,7 @@ function ConfigTab() {
         </CardContent>
       </Card>
 
-      <Card className="bg-slate-800/50 border-slate-700/50">
+      <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
         <CardHeader>
           <CardTitle className="text-base">SLA Settings</CardTitle>
         </CardHeader>
@@ -419,7 +426,7 @@ function ConfigTab() {
         </CardContent>
       </Card>
 
-      <Card className="bg-slate-800/50 border-slate-700/50">
+      <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
         <CardHeader>
           <CardTitle className="text-base">Session Settings</CardTitle>
         </CardHeader>
@@ -449,30 +456,135 @@ function ConfigTab() {
 // ─── Catalog Tab ──────────────────────────────────────────────────────────────
 
 function CatalogTab() {
-  const statsQuery = useGetSystemStats();
-  const configQuery = useGetSystemConfig();
-  const categories = statsQuery.data ? (statsQuery.data as any).categories ?? [] : [];
+  const qc = useQueryClient();
+  const { data: categories = [], isLoading: catLoading } = useCategories();
+  const { data: uomList = [], isLoading: uomLoading } = useUOM();
+  const { data: locations = [], isLoading: locLoading } = useLocations();
+
+  const [newCat, setNewCat] = useState("");
+  const [newUOM, setNewUOM] = useState("");
+  const [newLoc, setNewLoc] = useState("");
+
+  const addCat = useMutation({
+    mutationFn: (name: string) => configApi.addCategory(name),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: QUERY_KEYS.CONFIG_CATEGORIES }); toast({ title: "Category added" }); },
+    onError: () => toast({ title: "Failed to add category", variant: "destructive" }),
+  });
+  const delCat = useMutation({
+    mutationFn: (name: string) => configApi.deleteCategory(name),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: QUERY_KEYS.CONFIG_CATEGORIES }); toast({ title: "Category removed" }); },
+    onError: () => toast({ title: "Failed to remove category", variant: "destructive" }),
+  });
+  const addUOM = useMutation({
+    mutationFn: (name: string) => configApi.addUOM(name),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: QUERY_KEYS.CONFIG_UOM }); toast({ title: "Unit added" }); },
+    onError: () => toast({ title: "Failed to add unit", variant: "destructive" }),
+  });
+  const delUOM = useMutation({
+    mutationFn: (name: string) => configApi.deleteUOM(name),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: QUERY_KEYS.CONFIG_UOM }); toast({ title: "Unit removed" }); },
+    onError: () => toast({ title: "Failed to remove unit", variant: "destructive" }),
+  });
+  const addLoc = useMutation({
+    mutationFn: (name: string) => configApi.addLocation(name),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: QUERY_KEYS.CONFIG_LOCATIONS }); toast({ title: "Location added" }); },
+    onError: () => toast({ title: "Failed to add location", variant: "destructive" }),
+  });
+  const delLoc = useMutation({
+    mutationFn: (name: string) => configApi.deleteLocation(name),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: QUERY_KEYS.CONFIG_LOCATIONS }); toast({ title: "Location removed" }); },
+    onError: () => toast({ title: "Failed to remove location", variant: "destructive" }),
+  });
 
   return (
     <div className="space-y-6">
+      {/* Stock Categories */}
       <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5">
         <h3 className="text-sm font-semibold mb-4">Stock Categories</h3>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-          {["Laptop","Desktop","Monitor","Mobile Phone","Peripherals","Networking","Server","Storage","Software License","Access Card","ID Card","Power Equipment","Cables","Other IT Equipment"].map((cat) => (
-            <div key={cat} className="flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-xs text-[hsl(var(--foreground))]">
-              <span className="h-2 w-2 rounded-full bg-[hsl(var(--primary))]" />
-              {cat}
-            </div>
-          ))}
+        {catLoading ? (
+          <div className="flex flex-wrap gap-2 mb-4">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-7 w-24 rounded-full" />)}</div>
+        ) : (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {categories.map((cat) => (
+              <span key={cat} className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/50 px-3 py-1 text-xs text-[hsl(var(--foreground))]">
+                {cat}
+                <button onClick={() => delCat.mutate(cat)} disabled={delCat.isPending} className="rounded-full text-[hsl(var(--muted-foreground))] hover:text-red-400 transition-colors">
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2 max-w-sm">
+          <Input
+            placeholder="New category name"
+            value={newCat}
+            onChange={(e) => setNewCat(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && newCat.trim()) { addCat.mutate(newCat.trim()); setNewCat(""); } }}
+          />
+          <Button size="sm" onClick={() => { if (newCat.trim()) { addCat.mutate(newCat.trim()); setNewCat(""); } }} disabled={!newCat.trim() || addCat.isPending}>
+            {addCat.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          </Button>
         </div>
-        <p className="mt-4 text-xs text-[hsl(var(--muted-foreground))]">Categories are managed at the system level. Contact support to add new categories.</p>
       </div>
+
+      {/* Units of Measure */}
       <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5">
         <h3 className="text-sm font-semibold mb-4">Units of Measure</h3>
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-          {["Pieces","Boxes","Kg","Liters","Meters","Sets","Packs","Units","Rolls","Sheets"].map((uom) => (
-            <div key={uom} className="rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-center text-xs text-[hsl(var(--foreground))]">{uom}</div>
-          ))}
+        {uomLoading ? (
+          <div className="flex flex-wrap gap-2 mb-4">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-7 w-20 rounded-full" />)}</div>
+        ) : (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {uomList.map((uom) => (
+              <span key={uom} className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/50 px-3 py-1 text-xs text-[hsl(var(--foreground))]">
+                {uom}
+                <button onClick={() => delUOM.mutate(uom)} disabled={delUOM.isPending} className="rounded-full text-[hsl(var(--muted-foreground))] hover:text-red-400 transition-colors">
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2 max-w-sm">
+          <Input
+            placeholder="New unit (e.g. Pieces)"
+            value={newUOM}
+            onChange={(e) => setNewUOM(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && newUOM.trim()) { addUOM.mutate(newUOM.trim()); setNewUOM(""); } }}
+          />
+          <Button size="sm" onClick={() => { if (newUOM.trim()) { addUOM.mutate(newUOM.trim()); setNewUOM(""); } }} disabled={!newUOM.trim() || addUOM.isPending}>
+            {addUOM.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          </Button>
+        </div>
+      </div>
+
+      {/* Locations */}
+      <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5">
+        <h3 className="text-sm font-semibold mb-4">Locations</h3>
+        {locLoading ? (
+          <div className="flex flex-wrap gap-2 mb-4">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-7 w-28 rounded-full" />)}</div>
+        ) : (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {locations.map((loc) => (
+              <span key={loc} className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/50 px-3 py-1 text-xs text-[hsl(var(--foreground))]">
+                {loc}
+                <button onClick={() => delLoc.mutate(loc)} disabled={delLoc.isPending} className="rounded-full text-[hsl(var(--muted-foreground))] hover:text-red-400 transition-colors">
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2 max-w-sm">
+          <Input
+            placeholder="New location name"
+            value={newLoc}
+            onChange={(e) => setNewLoc(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && newLoc.trim()) { addLoc.mutate(newLoc.trim()); setNewLoc(""); } }}
+          />
+          <Button size="sm" onClick={() => { if (newLoc.trim()) { addLoc.mutate(newLoc.trim()); setNewLoc(""); } }} disabled={!newLoc.trim() || addLoc.isPending}>
+            {addLoc.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          </Button>
         </div>
       </div>
     </div>
@@ -485,11 +597,15 @@ function AIPolicyTab() {
   const configQuery = useGetSystemConfig();
   const updateConfig = useUpdateSystemConfig();
 
-  const config = configQuery.data ?? {};
-  const getVal = (k: string, d: unknown) => (config as any)[k] ?? d;
+  const config = configQuery.data;
+  const getVal = (k: string, d: unknown) => (config as any)?.[k] ?? d;
 
   const [sensitivity, setSensitivity] = useState<string>("");
-  useEffect(() => { setSensitivity(String(getVal("anomaly_sensitivity", "Medium"))); }, [config]);
+  useEffect(() => { 
+    if (config) {
+      setSensitivity(String(getVal("anomaly_sensitivity", "Medium"))); 
+    }
+  }, [config]);
 
   async function handleSave() {
     await updateConfig.mutateAsync({ anomaly_sensitivity: sensitivity } as any);
@@ -543,15 +659,17 @@ function AIPolicyTab() {
 function WorkflowTab() {
   const configQuery = useGetSystemConfig();
   const updateConfig = useUpdateSystemConfig();
-  const config = configQuery.data ?? {};
-  const getVal = (k: string, d: unknown) => (config as any)[k] ?? d;
+  const config = configQuery.data;
+  const getVal = (k: string, d: unknown) => (config as any)?.[k] ?? d;
   const [l2Threshold, setL2Threshold] = useState("");
   const [l1Sla, setL1Sla] = useState("");
   const [l2Sla, setL2Sla] = useState("");
   useEffect(() => {
-    setL2Threshold(String(getVal("l2_qty_threshold", 100)));
-    setL1Sla(String(getVal("l1_sla_hours", 24)));
-    setL2Sla(String(getVal("l2_sla_hours", 48)));
+    if (config) {
+      setL2Threshold(String(getVal("l2_qty_threshold", 100)));
+      setL1Sla(String(getVal("l1_sla_hours", 24)));
+      setL2Sla(String(getVal("l2_sla_hours", 48)));
+    }
   }, [config]);
 
   async function handleSave() {
@@ -623,12 +741,12 @@ function MonitoringTab() {
   return (
     <div className="space-y-6">
       {stats && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { label: "Total Users",       value: stats.total_users },
-            { label: "Total Stocks",      value: stats.total_stocks },
-            { label: "Active Stocks",     value: (stats as any).active_stocks ?? "—" },
-            { label: "Total Anomalies",   value: (stats as any).open_anomalies ?? "—" },
+            { label: "Total Users",        value: stats.total_users },
+            { label: "Total Stocks",       value: stats.total_stocks },
+            { label: "Pending Approvals",  value: stats.pending_approvals },
+            { label: "Total Anomalies",    value: stats.total_anomalies },
           ].map(({ label, value }) => (
             <div key={label} className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
               <p className="text-xs text-[hsl(var(--muted-foreground))]">{label}</p>
@@ -661,9 +779,153 @@ function MonitoringTab() {
   );
 }
 
+// ─── Access Control Tab ───────────────────────────────────────────────────────
+// Lets an admin choose a role and toggle which sidebar tabs that role can see.
+// Changes persist server-side and apply to every user of that role on next load.
+
+function AccessControlTab() {
+  const { data: visibility, isLoading } = useGetNavVisibility();
+  const updateVisibility = useUpdateNavVisibility();
+
+  const [role, setRole] = useState<string>("user");
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+
+  // Reset local toggles whenever the selected role or server data changes.
+  useEffect(() => {
+    setHidden(new Set(visibility?.[role] ?? []));
+  }, [role, visibility]);
+
+  const sections = getRoleNav(role);
+  const serverHidden = new Set(visibility?.[role] ?? []);
+  const dirty =
+    hidden.size !== serverHidden.size ||
+    [...hidden].some((h) => !serverHidden.has(h));
+
+  function toggle(href: string) {
+    setHidden((prev) => {
+      const next = new Set(prev);
+      if (next.has(href)) next.delete(href);
+      else next.add(href);
+      return next;
+    });
+  }
+
+  async function handleSave() {
+    try {
+      await updateVisibility.mutateAsync({ role, hidden: [...hidden] });
+      toast({ title: "Access updated", description: `Sidebar saved for ${ROLE_LABELS[role] ?? role}.` });
+    } catch {
+      toast({ title: "Failed to save access settings", variant: "destructive" });
+    }
+  }
+
+  const totalItems = sections.reduce((n, s) => n + s.items.length, 0);
+  const visibleItems = totalItems - hidden.size;
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-[hsl(var(--primary))]" />
+              <h3 className="text-sm font-semibold">Sidebar Access by Role</h3>
+            </div>
+            <p className="text-xs text-[hsl(var(--muted-foreground))]">
+              Choose a role, then toggle which navigation tabs its users can see. Saved changes apply to
+              everyone in that role.
+            </p>
+          </div>
+          <div className="w-48 space-y-1">
+            <Label className="text-xs">Role</Label>
+            <Select value={role} onValueChange={setRole}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {CONFIGURABLE_ROLES.map((r) => (
+                  <SelectItem key={r} value={r}>{ROLE_LABELS[r] ?? r}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-center gap-3 text-xs text-[hsl(var(--muted-foreground))]">
+          <span>{visibleItems} visible</span>
+          <span>·</span>
+          <span>{hidden.size} hidden</span>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16" />)}</div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {sections.map((section) => (
+            <div key={section.label} className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
+              <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-[hsl(var(--muted-foreground))]/70">
+                {section.label}
+              </p>
+              <div className="space-y-1.5">
+                {section.items.map((item) => {
+                  const isHidden = hidden.has(item.href);
+                  return (
+                    <div
+                      key={item.href}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-[hsl(var(--border))] px-3 py-2"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <item.icon className="h-4 w-4 shrink-0 text-[hsl(var(--muted-foreground))]" />
+                        <span className={cn("truncate text-sm", isHidden ? "text-[hsl(var(--muted-foreground))] line-through" : "text-[hsl(var(--foreground))]")}>
+                          {item.label}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => toggle(item.href)}
+                        title={isHidden ? "Hidden — click to show" : "Visible — click to hide"}
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium transition-colors",
+                          isHidden
+                            ? "bg-[hsl(var(--secondary))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--border))]"
+                            : "bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25"
+                        )}
+                      >
+                        {isHidden ? <><EyeOff className="h-3 w-3" /> Hidden</> : <><Eye className="h-3 w-3" /> Visible</>}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        <Button onClick={handleSave} disabled={!dirty || updateVisibility.isPending}>
+          {updateVisibility.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+          Save Access Settings
+        </Button>
+        {dirty && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setHidden(new Set(visibility?.[role] ?? []))}
+            disabled={updateVisibility.isPending}
+          >
+            Reset
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const VALID_TABS = ["users", "catalog", "system", "config", "policy", "workflow", "monitoring"] as const;
+  const { data: locationsData } = useLocations();
+  const locationsList = locationsData ?? [];
+  const VALID_TABS = ["users", "access", "catalog", "system", "config", "policy", "workflow", "monitoring"] as const;
   type TabId = (typeof VALID_TABS)[number];
   const rawTab = searchParams.get("tab") ?? "users";
   const activeTab: TabId = (VALID_TABS as readonly string[]).includes(rawTab) ? (rawTab as TabId) : "users";
@@ -684,6 +946,7 @@ export default function AdminPage() {
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="access">Access Control</TabsTrigger>
           <TabsTrigger value="catalog">Catalog</TabsTrigger>
           <TabsTrigger value="system">System Health</TabsTrigger>
           <TabsTrigger value="config">Configuration</TabsTrigger>
@@ -693,7 +956,11 @@ export default function AdminPage() {
         </TabsList>
 
         <TabsContent value="users" className="mt-4">
-          <UsersTab />
+          <UsersTab locationsList={locationsList} />
+        </TabsContent>
+
+        <TabsContent value="access" className="mt-4">
+          <AccessControlTab />
         </TabsContent>
 
         <TabsContent value="catalog" className="mt-4">

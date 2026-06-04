@@ -41,7 +41,7 @@ function DropZone({
         "flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-10 cursor-pointer transition-colors",
         dragging
           ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/10"
-          : "border-[hsl(var(--border))] hover:border-[hsl(var(--primary))]/50 hover:bg-slate-800/50"
+          : "border-[hsl(var(--border))] hover:border-[hsl(var(--primary))]/50 hover:bg-[hsl(var(--secondary))]/30"
       )}
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
@@ -87,7 +87,7 @@ function JobStatusCard({ job }: { job: UploadJob }) {
   const pct = job.total_rows > 0 ? Math.round((job.saved_rows / job.total_rows) * 100) : 0;
 
   return (
-    <div className="rounded-lg border border-[hsl(var(--border))] bg-slate-900/50 p-4 space-y-4">
+    <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/40 p-4 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {statusIcon}
@@ -194,7 +194,7 @@ function UploadTab({ type }: { type: "stocks" | "distributions" }) {
   return (
     <div className="space-y-6">
       {/* Upload area */}
-      <Card className="bg-slate-800/50 border-slate-700/50">
+      <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">
@@ -235,7 +235,7 @@ function UploadTab({ type }: { type: "stocks" | "distributions" }) {
 
       {/* Current job status */}
       {job && (
-        <Card className="bg-slate-800/50 border-slate-700/50">
+        <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
           <CardHeader>
             <CardTitle className="text-base">Upload Status</CardTitle>
           </CardHeader>
@@ -246,7 +246,7 @@ function UploadTab({ type }: { type: "stocks" | "distributions" }) {
       )}
 
       {/* Upload history */}
-      <Card className="bg-slate-800/50 border-slate-700/50">
+      <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
         <CardHeader>
           <CardTitle className="text-base">Upload History</CardTitle>
         </CardHeader>

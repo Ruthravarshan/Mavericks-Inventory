@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import { useToast } from "@/hooks/use-toast";
 import type { AssetRequest } from "@/types";
 
@@ -367,13 +368,11 @@ export default function ManageRequestsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-[hsl(var(--foreground))]">Asset Requests</h1>
-        <p className="text-sm text-[hsl(var(--muted-foreground))]">
-          Review and fulfill employee IT asset requests
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="People"
+        title="Asset Requests"
+        description="Review and fulfill employee IT asset requests"
+      />
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

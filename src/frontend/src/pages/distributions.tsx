@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Clock, User, Brain } from "lucide-react";
+import { Plus, Search, User, Brain } from "lucide-react";
 import { useListDistributions, useGetDistribution } from "@/hooks/use-queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { formatDate, formatDateTime, truncate, cn } from "@/lib/utils";
 import { STATUS_LABELS, STATUS_COLORS, RISK_COLORS } from "@/lib/constants";
-import type { Distribution } from "@/types";
 
 function DistributionDetailModal({
   id,
@@ -128,7 +127,7 @@ function DistributionDetailModal({
                 <Brain className="h-4 w-4 text-[hsl(var(--primary))]" />
                 <h3 className="text-sm font-semibold">AI Risk Assessment</h3>
               </div>
-              <div className="rounded-lg border border-[hsl(var(--border))] bg-slate-900/50 p-4 space-y-3">
+              <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/40 p-4 space-y-3">
                 <div className="flex items-center gap-3">
                   <span className={cn("rounded-full border px-2 py-0.5 text-xs font-medium", RISK_COLORS[distribution.risk_level])}>
                     {distribution.risk_level} Risk · Score: {distribution.risk_score}
@@ -145,10 +144,10 @@ function DistributionDetailModal({
                   <p className="text-xs text-[hsl(var(--muted-foreground))] mb-1">AI Reasoning</p>
                   <p className="text-sm">
                     {showFullReasoning
-                      ? distribution.ai_reasoning
-                      : truncate(distribution.ai_reasoning, 200)}
+                      ? (distribution.ai_reasoning ?? "")
+                      : truncate(distribution.ai_reasoning ?? "", 200)}
                   </p>
-                  {distribution.ai_reasoning.length > 200 && (
+                  {(distribution.ai_reasoning ?? "").length > 200 && (
                     <button
                       onClick={() => setShowFullReasoning((v) => !v)}
                       className="mt-1 text-xs text-[hsl(var(--primary))] hover:underline"
@@ -176,7 +175,7 @@ function DistributionDetailModal({
                             "border-blue-400 bg-blue-400": event.action.includes("submit"),
                           })} />
                           {i < distribution.approval_history.length - 1 && (
-                            <div className="w-0.5 flex-1 bg-slate-700" />
+                            <div className="w-0.5 flex-1 bg-[hsl(var(--border))]" />
                           )}
                         </div>
                         <div className="pb-3">
@@ -247,7 +246,7 @@ export default function DistributionsPage() {
           />
         </div>
         <Select value={status} onValueChange={(v) => { setStatus(v === "all" ? "" : v); setPage(1); }}>
-          <SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-36"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
             <SelectItem value="draft">Draft</SelectItem>
@@ -259,7 +258,7 @@ export default function DistributionsPage() {
           </SelectContent>
         </Select>
         <Select value={riskLevel} onValueChange={(v) => { setRiskLevel(v === "all" ? "" : v); setPage(1); }}>
-          <SelectTrigger className="w-32"><SelectValue placeholder="Risk" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-32"><SelectValue placeholder="Risk" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Risk</SelectItem>
             <SelectItem value="Low">Low</SelectItem>
@@ -270,7 +269,7 @@ export default function DistributionsPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-lg border border-[hsl(var(--border))] bg-slate-800/30">
+      <div className="overflow-x-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))]">
         <Table>
           <TableHeader>
             <TableRow>

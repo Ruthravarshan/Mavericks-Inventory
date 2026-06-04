@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2, Brain } from "lucide-react";
+import { CheckCircle2, Eye, EyeOff, Loader2, Brain } from "lucide-react";
 import {
   useListAnomalies,
   useAcknowledgeAnomaly,
@@ -63,7 +63,7 @@ function ResolveModal({
         </DialogHeader>
         {anomaly && (
           <div className="space-y-4">
-            <div className="rounded-lg bg-slate-900/50 p-3">
+            <div className="rounded-lg bg-[hsl(var(--secondary))]/40 p-3">
               <p className="font-medium">{anomaly.stock_name}</p>
               <p className="text-sm text-[hsl(var(--muted-foreground))]">{anomaly.anomaly_type}</p>
               <p className="mt-2 text-sm">{anomaly.ai_explanation}</p>
@@ -97,24 +97,27 @@ function ResolveModal({
 
 function AnomalyCard({ anomaly }: { anomaly: Anomaly }) {
   const [showFull, setShowFull] = useState(false);
+  const [confirmDismiss, setConfirmDismiss] = useState(false);
   const acknowledge = useAcknowledgeAnomaly();
   const dismiss = useDismissAnomaly();
 
-  const isInactive = anomaly.status !== "active";
+  // Only truly closed anomalies (resolved/dismissed) are visually muted.
+  // Acknowledged anomalies stay fully vivid — they're still being worked on.
+  const isClosed = anomaly.status === "resolved" || anomaly.status === "dismissed";
 
   const severityDot = {
     critical: "bg-red-500",
-    warning: "bg-yellow-500",
+    warning: "bg-amber-500",
     info: "bg-blue-500",
   }[anomaly.severity];
 
   return (
     <div className={cn(
-      "rounded-xl border p-5 space-y-4 transition-all",
-      isInactive ? "opacity-50" : "",
-      anomaly.severity === "critical" ? "border-red-500/30 bg-red-500/5" :
-      anomaly.severity === "warning" ? "border-yellow-500/30 bg-yellow-500/5" :
-      "border-blue-500/30 bg-blue-500/5"
+      "rounded-xl border border-l-4 p-5 space-y-4 shadow-sm transition-all",
+      isClosed ? "opacity-75 saturate-50" : "",
+      anomaly.severity === "critical" ? "border-red-500/40 border-l-red-500 bg-red-500/[0.07]" :
+      anomaly.severity === "warning" ? "border-amber-500/40 border-l-amber-500 bg-amber-500/[0.07]" :
+      "border-blue-500/40 border-l-blue-500 bg-blue-500/[0.07]"
     )}>
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
@@ -150,16 +153,16 @@ function AnomalyCard({ anomaly }: { anomaly: Anomaly }) {
       </div>
 
       {/* AI Explanation */}
-      <div className="rounded-lg border border-[hsl(var(--border))]/50 bg-slate-900/50 p-3">
+      <div className="rounded-lg border border-[hsl(var(--border))]/50 bg-[hsl(var(--secondary))]/40 p-3">
         <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--primary))]">
           <Brain className="h-3 w-3" />
           AI Explanation
         </div>
         <p className="text-sm">
-          {showFull ? anomaly.ai_explanation : anomaly.ai_explanation.slice(0, 160)}
-          {anomaly.ai_explanation.length > 160 && !showFull && "..."}
+          {showFull ? (anomaly.ai_explanation ?? "") : (anomaly.ai_explanation ?? "").slice(0, 160)}
+          {(anomaly.ai_explanation ?? "").length > 160 && !showFull && "..."}
         </p>
-        {anomaly.ai_explanation.length > 160 && (
+        {(anomaly.ai_explanation ?? "").length > 160 && (
           <button
             onClick={() => setShowFull((v) => !v)}
             className="mt-1 text-xs text-[hsl(var(--primary))] hover:underline"
@@ -210,45 +213,105 @@ function AnomalyCard({ anomaly }: { anomaly: Anomaly }) {
             variant="ghost"
             className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
             disabled={dismiss.isPending}
-            onClick={async () => {
-              try {
-                await dismiss.mutateAsync(anomaly.id);
-                toast({ title: "Anomaly dismissed" });
-              } catch {
-                toast({ title: "Failed to dismiss", variant: "destructive" });
-              }
-            }}
+            onClick={() => setConfirmDismiss(true)}
+            title="Dismiss anomaly"
           >
             <EyeOff className="h-4 w-4" />
           </Button>
         </div>
       )}
+
+      <Dialog open={confirmDismiss} onOpenChange={(o) => !o && setConfirmDismiss(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Dismiss this anomaly?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/40 p-3">
+              <p className="text-sm font-medium">{anomaly.stock_name}</p>
+              <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                {anomaly.anomaly_type} · {anomaly.severity}
+              </p>
+            </div>
+            <p className="text-sm text-[hsl(var(--muted-foreground))]">
+              Dismissing will mark this anomaly as not actionable and remove it from the
+              active queue. This action is recorded in the audit log.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDismiss(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={dismiss.isPending}
+              onClick={async () => {
+                try {
+                  await dismiss.mutateAsync(anomaly.id);
+                  toast({ title: "Anomaly dismissed" });
+                  setConfirmDismiss(false);
+                } catch {
+                  toast({ title: "Failed to dismiss", variant: "destructive" });
+                }
+              }}
+            >
+              {dismiss.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Dismissing…
+                </>
+              ) : (
+                "Dismiss"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 export default function AnomaliesPage() {
   const [severity, setSeverity] = useState("");
+  const [showResolved, setShowResolved] = useState(false);
   const [resolveAnomaly, setResolveAnomaly] = useState<Anomaly | null>(null);
 
   const { data: allData, isLoading } = useListAnomalies({ severity: severity || undefined });
   const { data: criticalData } = useListAnomalies({ severity: "critical", status: "active" });
   const { data: warningData } = useListAnomalies({ severity: "warning", status: "active" });
-  const { data: infoData } = useListAnomalies({ severity: "info" });
+  const { data: infoData } = useListAnomalies({ severity: "info", status: "active" });
 
-  const anomalies = allData?.items ?? [];
+  const allAnomalies = allData?.items ?? [];
+  // Hide resolved + dismissed unless the user explicitly toggles them on
+  const anomalies = showResolved
+    ? allAnomalies
+    : allAnomalies.filter((a) => a.status === "active" || a.status === "acknowledged");
   const activeCount = (criticalData?.total ?? 0) + (warningData?.total ?? 0);
+  const hiddenCount = allAnomalies.length - anomalies.length;
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Anomaly Detection</h1>
           <p className="text-sm text-[hsl(var(--muted-foreground))]">
-            {activeCount} active anomaly{activeCount !== 1 ? "ies" : ""} requiring attention
+            {activeCount} active anomal{activeCount !== 1 ? "ies" : "y"} requiring attention
+            {!showResolved && hiddenCount > 0 && (
+              <span className="ml-1 text-[hsl(var(--muted-foreground))]/70">
+                · {hiddenCount} resolved/dismissed hidden
+              </span>
+            )}
           </p>
         </div>
+        <Button
+          size="sm"
+          variant={showResolved ? "secondary" : "outline"}
+          onClick={() => setShowResolved((v) => !v)}
+        >
+          {showResolved ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          {showResolved ? "Hide resolved" : "Show resolved"}
+        </Button>
       </div>
 
       {/* Summary cards */}

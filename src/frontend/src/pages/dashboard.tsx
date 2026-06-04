@@ -26,23 +26,153 @@ import {
   Pie,
   Cell,
   Legend,
+  AreaChart,
+  Area,
+  LineChart,
+  Line,
 } from "recharts";
 import { motion } from "framer-motion";
+import { Sparkles } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import {
   useGetDashboardSummary,
   useGetDashboardActivity,
-  useGetSystemHealth,
   useGetSystemStats,
+  useGetHealthScores,
 } from "@/hooks/use-queries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { HealthBadge } from "@/components/health-badge";
 import { formatRelativeTime, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
-const COLORS = ["#14b8a6", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6"];
+
+const CHART_TOOLTIP = {
+  contentStyle: {
+    backgroundColor: "hsl(var(--chart-tooltip-bg))",
+    border: "1px solid hsl(var(--chart-tooltip-border))",
+    borderRadius: "8px",
+    color: "hsl(var(--chart-tooltip-text))",
+    boxShadow: "0 8px 24px -6px rgba(0,0,0,0.4)",
+  },
+  labelStyle: { color: "hsl(var(--chart-text))", fontWeight: 600, marginBottom: 4 },
+  itemStyle: { color: "hsl(var(--chart-tooltip-text))" },
+};
+
+// ─── Shared editorial hero ────────────────────────────────────────────────────
+// Inherits the visual language from the login page: eyebrow micro-label,
+// large display heading with tight tracking, signature 5-color palette strip.
+
+function DashboardHero({
+  eyebrow,
+  title,
+  subtitle,
+  highlight,
+  actions,
+  liveLabel,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle?: string;
+  highlight?: string;
+  actions?: React.ReactNode;
+  liveLabel?: string;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+      className="relative overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))]/70 backdrop-blur-sm"
+      style={{
+        boxShadow:
+          "0 1px 0 0 hsl(var(--foreground) / 0.04) inset, 0 12px 32px -16px hsl(0 0% 0% / 0.5)",
+      }}
+    >
+      {/* Ambient glow inside the hero */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full"
+        style={{
+          background:
+            "radial-gradient(closest-side, hsl(var(--primary) / 0.18), transparent 70%)",
+          filter: "blur(20px)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -bottom-32 -left-20 h-64 w-64 rounded-full"
+        style={{
+          background:
+            "radial-gradient(closest-side, hsl(var(--info) / 0.12), transparent 70%)",
+          filter: "blur(24px)",
+        }}
+      />
+
+      <div className="relative px-6 py-7 sm:px-8 sm:py-8">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-3">
+              <div
+                className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--primary))]/30 bg-[hsl(var(--primary))]/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--primary))]"
+              >
+                <Sparkles className="h-3 w-3" />
+                {eyebrow}
+              </div>
+              {liveLabel && (
+                <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))]">
+                  <span
+                    className="mvx-pulse-soft inline-block h-1.5 w-1.5 rounded-full"
+                    style={{ background: "hsl(var(--success))" }}
+                  />
+                  {liveLabel}
+                </div>
+              )}
+            </div>
+
+            <h1
+              className="numeral-display mt-5 text-3xl font-semibold leading-[1.05] tracking-[-0.025em] sm:text-[40px]"
+            >
+              {title}
+              {highlight && (
+                <>
+                  {" "}
+                  <span className="text-[hsl(var(--primary))]">{highlight}</span>
+                </>
+              )}
+            </h1>
+
+            {subtitle && (
+              <p className="mt-3 max-w-xl text-sm leading-relaxed text-[hsl(var(--muted-foreground))]">
+                {subtitle}
+              </p>
+            )}
+
+            {/* Signature palette strip — same motif as login */}
+            <motion.div
+              initial={{ scaleX: 0 }}
+              animate={{ scaleX: 1 }}
+              transition={{ delay: 0.25, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+              style={{ transformOrigin: "left" }}
+              className="mt-6 flex h-[3px] w-44 overflow-hidden rounded-full"
+              aria-hidden
+            >
+              <div className="flex-1" style={{ background: "hsl(var(--foreground))" }} />
+              <div className="flex-1" style={{ background: "hsl(var(--foreground) / 0.55)" }} />
+              <div className="flex-1" style={{ background: "hsl(var(--muted-foreground))" }} />
+              <div className="flex-1" style={{ background: "hsl(var(--primary))" }} />
+              <div className="flex-1" style={{ background: "hsl(var(--primary) / 0.55)" }} />
+            </motion.div>
+          </div>
+
+          {actions && (
+            <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 function useCountUp(target: number, duration = 900) {
   const [count, setCount] = useState(0);
@@ -84,12 +214,13 @@ function StatCard({
   index?: number;
 }) {
   const colorMap: Record<string, string> = {
-    teal: "bg-teal-500/20 text-teal-400",
-    blue: "bg-blue-500/20 text-blue-400",
-    amber: "bg-amber-500/20 text-amber-400",
-    red: "bg-red-500/20 text-red-400",
-    green: "bg-green-500/20 text-green-400",
-    purple: "bg-purple-500/20 text-purple-400",
+    primary: "bg-[hsl(var(--primary))]/15 text-[hsl(var(--primary))]",
+    teal:    "bg-[hsl(var(--primary))]/15 text-[hsl(var(--primary))]",
+    blue:    "bg-[hsl(var(--info))]/15 text-[hsl(var(--info))]",
+    amber:   "bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))]",
+    red:     "bg-[hsl(var(--destructive))]/15 text-[hsl(var(--destructive))]",
+    green:   "bg-[hsl(var(--success))]/15 text-[hsl(var(--success))]",
+    purple:  "bg-violet-500/20 text-violet-400",
   };
 
   const numericValue = typeof value === "number" ? value : NaN;
@@ -105,35 +236,49 @@ function StatCard({
     >
       <Card
         className={cn(
-          "bg-slate-800/50 border-slate-700/50 transition-all",
-          onClick && "cursor-pointer hover:border-[hsl(var(--primary))]/40 hover:shadow-lg hover:shadow-[hsl(var(--primary))]/5"
+          "group relative overflow-hidden border-[hsl(var(--border))] bg-gradient-to-b from-[hsl(var(--card))] to-[hsl(var(--card))]/85 transition-all",
+          onClick && "cursor-pointer hover:border-[hsl(var(--primary))]/40 hover:shadow-lg hover:shadow-[hsl(var(--primary))]/10"
         )}
         onClick={onClick}
       >
-        <CardContent className="p-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-[hsl(var(--muted-foreground))]">{title}</p>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-[hsl(var(--foreground))]">
+        {/* Subtle top hairline highlight */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-px"
+          style={{
+            background:
+              "linear-gradient(90deg, transparent, hsl(var(--foreground) / 0.08), transparent)",
+          }}
+        />
+        <CardContent className="p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[hsl(var(--muted-foreground))]">
+                {title}
+              </p>
+              <p className="numeral-display mt-3 text-[34px] font-semibold leading-none tabular-nums tracking-[-0.03em] text-[hsl(var(--foreground))]">
                 {displayValue}
               </p>
               {trend && (
-                <div className="mt-1 flex items-center gap-1 text-xs">
+                <div className="mt-2 flex items-center gap-1 text-xs">
                   {trend.positive ? (
-                    <TrendingUp className="h-3 w-3 text-green-400" />
+                    <TrendingUp className="h-3 w-3 text-[hsl(var(--success))]" />
                   ) : (
-                    <TrendingDown className="h-3 w-3 text-red-400" />
+                    <TrendingDown className="h-3 w-3 text-[hsl(var(--destructive))]" />
                   )}
-                  <span className={trend.positive ? "text-green-400" : "text-red-400"}>
+                  <span className={trend.positive ? "text-[hsl(var(--success))]" : "text-[hsl(var(--destructive))]"}>
                     {trend.value}% from last month
                   </span>
                 </div>
               )}
             </div>
             <motion.div
-              whileHover={{ rotate: 12, scale: 1.1 }}
+              whileHover={{ rotate: 6, scale: 1.06 }}
               transition={{ duration: 0.2 }}
-              className={cn("rounded-lg p-3", colorMap[color] ?? colorMap.teal)}
+              className={cn(
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+                colorMap[color] ?? colorMap.primary
+              )}
             >
               <Icon className="h-5 w-5" />
             </motion.div>
@@ -155,26 +300,29 @@ function ExecutiveDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-[hsl(var(--foreground))]">Executive Dashboard</h1>
-          <p className="text-sm text-[hsl(var(--muted-foreground))]">Your distribution overview</p>
-        </div>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={() => navigate("/distributions/new")}>
-            <Plus className="h-4 w-4" />
-            New Distribution
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => navigate("/upload")}>
-            <Upload className="h-4 w-4" />
-            Upload
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => navigate("/reports")}>
-            <BarChart3 className="h-4 w-4" />
-            Reports
-          </Button>
-        </div>
-      </div>
+      <DashboardHero
+        eyebrow="EXECUTIVE WORKSPACE"
+        title="Your distribution"
+        highlight="overview."
+        subtitle="Track every transaction you've initiated. Approve, audit, and renew with confidence."
+        liveLabel="LIVE"
+        actions={
+          <>
+            <Button size="sm" onClick={() => navigate("/distributions/new")}>
+              <Plus className="h-4 w-4" />
+              New Distribution
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate("/upload")}>
+              <Upload className="h-4 w-4" />
+              Upload
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate("/reports")}>
+              <BarChart3 className="h-4 w-4" />
+              Reports
+            </Button>
+          </>
+        }
+      />
 
       {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -183,7 +331,7 @@ function ExecutiveDashboard() {
           title="My Distributions"
           value={summary?.my_distributions ?? 0}
           icon={ArrowRightLeft}
-          color="teal"
+          color="primary"
           onClick={() => navigate("/distributions")}
         />
         <StatCard
@@ -213,18 +361,18 @@ function ExecutiveDashboard() {
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Stock Availability */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3, duration: 0.4 }}>
-          <Card className="bg-slate-800/50 border-slate-700/50">
+          <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
             <CardHeader>
               <CardTitle className="text-base">Stock Availability (Top 5 Categories)</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={summary?.top_distributed_items?.slice(0, 5) ?? []}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="stock_name" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px" }} />
-                  <Bar dataKey="total_qty" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--chart-grid))" />
+                  <XAxis dataKey="stock_name" tick={{ fill: "hsl(var(--chart-text))", fontSize: 11 }} stroke="hsl(var(--chart-grid))" />
+                  <YAxis tick={{ fill: "hsl(var(--chart-text))", fontSize: 11 }} stroke="hsl(var(--chart-grid))" />
+                  <Tooltip {...CHART_TOOLTIP} />
+                  <Bar dataKey="total_qty" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -233,7 +381,7 @@ function ExecutiveDashboard() {
 
         {/* Recent Activity */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38, duration: 0.4 }}>
-          <Card className="bg-slate-800/50 border-slate-700/50">
+          <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
             <CardHeader>
               <CardTitle className="text-base">Recent Activity</CardTitle>
             </CardHeader>
@@ -268,6 +416,116 @@ function ExecutiveDashboard() {
   );
 }
 
+// ─── Resource charts (shared) ─────────────────────────────────────────────────
+
+// Available stock vs the required minimum (reorder) level, per top stock.
+// Surfaces where the org is short on resources at a glance.
+function AvailableVsRequiredCard() {
+  const { data: scores = [], isLoading } = useGetHealthScores();
+
+  const data = [...scores]
+    .sort((a, b) => b.min_level - a.min_level)
+    .slice(0, 8)
+    .map((s) => ({
+      name: s.stock_name.length > 14 ? s.stock_name.slice(0, 13) + "…" : s.stock_name,
+      Available: s.available_qty,
+      Required: s.min_level,
+      short: s.available_qty < s.min_level,
+    }));
+
+  const shortfalls = scores.filter((s) => s.available_qty < s.min_level).length;
+
+  return (
+    <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">Resources: Available vs Required</CardTitle>
+          {shortfalls > 0 && (
+            <span className="rounded-full bg-[hsl(var(--destructive))]/15 px-2 py-0.5 text-xs font-medium text-[hsl(var(--destructive))]">
+              {shortfalls} below minimum
+            </span>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-[240px]" />
+        ) : data.length > 0 ? (
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={data} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--chart-grid))" />
+              <XAxis dataKey="name" tick={{ fill: "hsl(var(--chart-text))", fontSize: 10 }} stroke="hsl(var(--chart-grid))" interval={0} angle={-20} textAnchor="end" height={50} />
+              <YAxis tick={{ fill: "hsl(var(--chart-text))", fontSize: 11 }} stroke="hsl(var(--chart-grid))" />
+              <Tooltip {...CHART_TOOLTIP} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Line
+                type="monotone"
+                dataKey="Available"
+                stroke="hsl(var(--primary))"
+                strokeWidth={2.5}
+                dot={{ r: 3, fill: "hsl(var(--primary))" }}
+                activeDot={{ r: 5 }}
+              />
+              <Line
+                type="monotone"
+                dataKey="Required"
+                stroke="hsl(var(--warning))"
+                strokeWidth={2.5}
+                strokeDasharray="5 4"
+                dot={{ r: 3, fill: "hsl(var(--warning))" }}
+                activeDot={{ r: 5 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex h-[240px] items-center justify-center text-[hsl(var(--muted-foreground))]">
+            No stock-level data
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Resource movement over time — distribution volume trend.
+function ResourceFlowCard({ trend }: { trend: { date: string; count: number }[] }) {
+  const data = (trend ?? []).map((t) => ({
+    date: t.date?.slice(5) ?? t.date,
+    Distributions: t.count,
+  }));
+
+  return (
+    <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
+      <CardHeader>
+        <CardTitle className="text-base">Resource Flow (Distribution Trend)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {data.length > 0 ? (
+          <ResponsiveContainer width="100%" height={240}>
+            <AreaChart data={data}>
+              <defs>
+                <linearGradient id="flowFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--chart-grid))" />
+              <XAxis dataKey="date" tick={{ fill: "hsl(var(--chart-text))", fontSize: 10 }} stroke="hsl(var(--chart-grid))" />
+              <YAxis tick={{ fill: "hsl(var(--chart-text))", fontSize: 11 }} stroke="hsl(var(--chart-grid))" allowDecimals={false} />
+              <Tooltip {...CHART_TOOLTIP} />
+              <Area type="monotone" dataKey="Distributions" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#flowFill)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex h-[240px] items-center justify-center text-[hsl(var(--muted-foreground))]">
+            No trend data yet
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Manager Dashboard ────────────────────────────────────────────────────────
 
 function ManagerDashboard() {
@@ -278,36 +536,67 @@ function ManagerDashboard() {
   if (isLoading) return <DashboardSkeleton />;
 
   const healthData = [
-    { name: "Healthy", value: summary?.stock_health_summary.healthy ?? 0, color: "#22c55e" },
-    { name: "Warning", value: summary?.stock_health_summary.warning ?? 0, color: "#eab308" },
-    { name: "Critical", value: summary?.stock_health_summary.critical ?? 0, color: "#ef4444" },
+    { name: "Healthy", value: summary?.stock_health_summary.healthy ?? 0, color: "hsl(var(--success))" },
+    { name: "Warning", value: summary?.stock_health_summary.warning ?? 0, color: "hsl(var(--warning))" },
+    { name: "Critical", value: summary?.stock_health_summary.critical ?? 0, color: "hsl(var(--destructive))" },
   ].filter((d) => d.value > 0);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Manager Dashboard</h1>
-          <p className="text-sm text-[hsl(var(--muted-foreground))]">Approval queue and anomaly overview</p>
-        </div>
-      </div>
+      <DashboardHero
+        eyebrow="MANAGER WORKBENCH"
+        title="Approval queue,"
+        highlight="at a glance."
+        subtitle="Pending decisions, surfaced anomalies, and stock health — everything you need to act on, in one view."
+        liveLabel="LIVE"
+      />
 
-      {/* Pending approvals hero */}
-      <div
-        className="cursor-pointer rounded-xl border border-amber-500/30 bg-amber-500/10 p-6 transition-colors hover:border-amber-500/50"
+      {/* Pending approvals hero — editorial treatment */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+        whileHover={{ y: -2 }}
         onClick={() => navigate("/approvals")}
+        className="group relative cursor-pointer overflow-hidden rounded-2xl border border-[hsl(var(--primary))]/30 bg-gradient-to-br from-[hsl(var(--primary))]/12 via-[hsl(var(--card))] to-[hsl(var(--card))] p-7 transition-colors hover:border-[hsl(var(--primary))]/55"
+        style={{
+          boxShadow:
+            "0 1px 0 0 hsl(var(--foreground) / 0.05) inset, 0 12px 32px -16px hsl(0 0% 0% / 0.5)",
+        }}
       >
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-amber-400">Pending Approvals</p>
-            <p className="mt-1 text-5xl font-bold text-white">{summary?.pending_approvals ?? 0}</p>
-            <p className="mt-2 text-sm text-slate-400">
-              Avg. {summary?.approval_velocity_hours?.toFixed(1) ?? "—"} hours processing time (30 days)
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full"
+          style={{
+            background:
+              "radial-gradient(closest-side, hsl(var(--primary) / 0.22), transparent 70%)",
+            filter: "blur(18px)",
+          }}
+        />
+        <div className="relative flex items-center justify-between gap-6">
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[hsl(var(--primary))]">
+              PENDING APPROVALS
+            </div>
+            <p className="numeral-display mt-3 text-[64px] font-semibold leading-none tracking-[-0.04em] text-[hsl(var(--foreground))]">
+              {summary?.pending_approvals ?? 0}
+            </p>
+            <p className="mt-3 text-sm text-[hsl(var(--muted-foreground))]">
+              Avg.{" "}
+              <span className="font-semibold text-[hsl(var(--foreground))]">
+                {summary?.approval_velocity_hours?.toFixed(1) ?? "—"} hours
+              </span>{" "}
+              processing time (last 30 days)
             </p>
           </div>
-          <CheckSquare className="h-16 w-16 text-amber-500/30" />
+          <div
+            className="hidden h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-[hsl(var(--primary))]/15 sm:flex"
+            style={{ boxShadow: "0 8px 24px -8px hsl(var(--primary) / 0.45)" }}
+          >
+            <CheckSquare className="h-9 w-9 text-[hsl(var(--primary))]" />
+          </div>
         </div>
-      </div>
+      </motion.div>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
@@ -331,13 +620,13 @@ function ManagerDashboard() {
           title="Total Distributions"
           value={summary?.total_distributions ?? 0}
           icon={ArrowRightLeft}
-          color="teal"
+          color="primary"
         />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Stock Health Pie */}
-        <Card className="bg-slate-800/50 border-slate-700/50">
+        <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
           <CardHeader>
             <CardTitle className="text-base">Stock Health Overview</CardTitle>
           </CardHeader>
@@ -350,7 +639,7 @@ function ManagerDashboard() {
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px" }} />
+                  <Tooltip {...CHART_TOOLTIP} />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
@@ -361,7 +650,7 @@ function ManagerDashboard() {
         </Card>
 
         {/* Recent activity */}
-        <Card className="bg-slate-800/50 border-slate-700/50">
+        <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
           <CardHeader>
             <CardTitle className="text-base">Recent Actions</CardTitle>
           </CardHeader>
@@ -385,6 +674,12 @@ function ManagerDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Resource availability charts */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <AvailableVsRequiredCard />
+        <ResourceFlowCard trend={summary?.transaction_trend ?? []} />
+      </div>
     </div>
   );
 }
@@ -394,60 +689,35 @@ function ManagerDashboard() {
 function AdminDashboard() {
   const navigate = useNavigate();
   const { data: summary, isLoading } = useGetDashboardSummary();
-  const { data: systemHealth } = useGetSystemHealth();
   const { data: stats } = useGetSystemStats();
   const { data: activity = [] } = useGetDashboardActivity();
 
   if (isLoading) return <DashboardSkeleton />;
 
-  const statusColor = {
-    healthy: "text-green-400 bg-green-500/20",
-    degraded: "text-yellow-400 bg-yellow-500/20",
-    down: "text-red-400 bg-red-500/20",
-  };
-
   const distByStatus = summary?.distribution_by_status ?? [];
-  const DIST_COLORS = ["#6b7280", "#0ea5e9", "#f59e0b", "#f97316", "#22c55e", "#ef4444"];
+  const DIST_COLORS = [
+    "hsl(var(--muted-foreground))",
+    "hsl(var(--info))",
+    "hsl(var(--warning))",
+    "hsl(var(--primary))",
+    "hsl(var(--success))",
+    "hsl(var(--destructive))",
+  ];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-          <p className="text-sm text-[hsl(var(--muted-foreground))]">System overview and health</p>
-        </div>
-      </div>
-
-      {/* System Health */}
-      <Card className="bg-slate-800/50 border-slate-700/50">
-        <CardHeader>
-          <CardTitle className="text-base">System Health</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {systemHealth?.services.map((svc) => (
-              <div key={svc.name} className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">{svc.name}</span>
-                  <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", statusColor[svc.status])}>
-                    {svc.status}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">{svc.response_time_ms}ms</p>
-              </div>
-            )) ?? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-16" />
-              ))
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      <DashboardHero
+        eyebrow="SYSTEM ADMINISTRATION"
+        title="Operations,"
+        highlight="under control."
+        subtitle="Service health, user activity, and the full audit trail — observed live across every subsystem."
+        liveLabel="LIVE"
+      />
 
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard index={0} title="Total Users" value={stats?.total_users ?? 0} icon={Users} color="blue" />
-        <StatCard index={1} title="Total Stocks" value={summary?.total_stocks ?? 0} icon={Database} color="teal" />
+        <StatCard index={1} title="Total Stocks" value={summary?.total_stocks ?? 0} icon={Database} color="primary" />
         <StatCard
           index={2}
           title="Pending Approvals"
@@ -468,7 +738,7 @@ function AdminDashboard() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Transaction breakdown */}
-        <Card className="bg-slate-800/50 border-slate-700/50">
+        <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
           <CardHeader>
             <CardTitle className="text-base">Distribution by Status</CardTitle>
           </CardHeader>
@@ -481,7 +751,7 @@ function AdminDashboard() {
                       <Cell key={`cell-${index}`} fill={DIST_COLORS[index % DIST_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px" }} />
+                  <Tooltip {...CHART_TOOLTIP} />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
@@ -492,41 +762,47 @@ function AdminDashboard() {
         </Card>
 
         {/* Top distributed items */}
-        <Card className="bg-slate-800/50 border-slate-700/50">
+        <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
           <CardHeader>
             <CardTitle className="text-base">Top Distributed Items</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={stats?.top_distributed?.slice(0, 10) ?? []}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="stock_name" tick={{ fill: "#94a3b8", fontSize: 10 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px" }} />
-                <Bar dataKey="total_qty" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--chart-grid))" />
+                <XAxis dataKey="stock_name" tick={{ fill: "hsl(var(--chart-text))", fontSize: 10 }} stroke="hsl(var(--chart-grid))" />
+                <YAxis tick={{ fill: "hsl(var(--chart-text))", fontSize: 11 }} stroke="hsl(var(--chart-grid))" />
+                <Tooltip {...CHART_TOOLTIP} />
+                <Bar dataKey="total_qty" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>
 
+      {/* Resource availability charts */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <AvailableVsRequiredCard />
+        <ResourceFlowCard trend={summary?.transaction_trend ?? []} />
+      </div>
+
       {/* Approval bottlenecks */}
       {stats?.pending_over_48h && stats.pending_over_48h.length > 0 && (
-        <Card className="bg-slate-800/50 border-red-500/20 border">
+        <Card className="border-[hsl(var(--destructive))]/30 bg-[hsl(var(--card))]">
           <CardHeader>
-            <CardTitle className="text-base text-red-400">Approval Bottlenecks (&gt;48h)</CardTitle>
+            <CardTitle className="text-base text-[hsl(var(--destructive))]">Approval Bottlenecks (&gt;48h)</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
               {stats.pending_over_48h.map((item) => (
-                <div key={item.transaction_code} className="flex items-center justify-between rounded-lg bg-red-500/5 px-3 py-2">
+                <div key={item.transaction_code} className="flex items-center justify-between rounded-lg bg-[hsl(var(--destructive))]/8 px-3 py-2">
                   <div>
                     <span className="text-sm font-medium">{item.transaction_code}</span>
                     <span className="ml-2 text-sm text-[hsl(var(--muted-foreground))]">{item.stock_name}</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-[hsl(var(--muted-foreground))]">by {item.submitted_by}</span>
-                    <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-xs font-medium text-red-400">
+                    <span className="rounded-full bg-[hsl(var(--destructive))]/15 px-2 py-0.5 text-xs font-medium text-[hsl(var(--destructive))]">
                       {item.hours_pending}h pending
                     </span>
                   </div>
@@ -538,14 +814,14 @@ function AdminDashboard() {
       )}
 
       {/* Recent activity */}
-      <Card className="bg-slate-800/50 border-slate-700/50">
+      <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
         <CardHeader>
           <CardTitle className="text-base">Recent System Activity</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
             {activity.slice(0, 8).map((item) => (
-              <div key={item.id} className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-slate-700/30">
+              <div key={item.id} className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-[hsl(var(--secondary))]/30">
                 <Activity className="h-4 w-4 shrink-0 text-[hsl(var(--primary))]" />
                 <span className="flex-1 text-sm">{item.description}</span>
                 <span className="shrink-0 text-xs text-[hsl(var(--muted-foreground))]">

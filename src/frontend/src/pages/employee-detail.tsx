@@ -8,7 +8,6 @@ import {
   Calendar,
   MapPin,
   Building2,
-  Loader2,
   Shield,
   Tag,
   Hash,

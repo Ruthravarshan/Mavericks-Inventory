@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   Search,
-  Loader2,
   Users,
   Laptop,
   MapPin,

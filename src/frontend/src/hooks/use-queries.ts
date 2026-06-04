@@ -17,8 +17,9 @@ import {
   reportsApi,
   ledgerApi,
   auditApi,
+  configApi,
 } from "@/lib/api";
-import { QUERY_KEYS } from "@/lib/constants";
+import { QUERY_KEYS, STOCK_CATEGORIES, UNITS_OF_MEASURE, LOCATIONS } from "@/lib/constants";
 import type {
   StockListParams,
   DistributionListParams,
@@ -68,7 +69,7 @@ export function useListStocks(params?: StockListParams) {
 
 export function useGetStock(
   id: string,
-  options?: Partial<UseQueryOptions<ReturnType<typeof stocksApi.get> extends Promise<infer D> ? D : never>>
+  options?: Partial<UseQueryOptions<import("@/types").Stock>>
 ) {
   return useQuery({
     queryKey: [...QUERY_KEYS.STOCKS, id],
@@ -515,5 +516,55 @@ export function useGetReport(
     queryFn: () => reportsApi.getReport(type, params).then((r) => r.data),
     enabled,
     staleTime: 30_000,
+  });
+}
+
+// ─── Config (categories / locations / UOM) ────────────────────────────────────
+
+export function useCategories() {
+  return useQuery({
+    queryKey: QUERY_KEYS.CONFIG_CATEGORIES,
+    queryFn: () => configApi.getCategories().then((r) => r.data.items),
+    staleTime: 10 * 60_000,
+    placeholderData: STOCK_CATEGORIES,
+  });
+}
+
+export function useLocations() {
+  return useQuery({
+    queryKey: QUERY_KEYS.CONFIG_LOCATIONS,
+    queryFn: () => configApi.getLocations().then((r) => r.data.items.map((l) => l.name)),
+    staleTime: 10 * 60_000,
+    placeholderData: LOCATIONS,
+  });
+}
+
+export function useUOM() {
+  return useQuery({
+    queryKey: QUERY_KEYS.CONFIG_UOM,
+    queryFn: () => configApi.getUOM().then((r) => r.data.items),
+    staleTime: 10 * 60_000,
+    placeholderData: UNITS_OF_MEASURE,
+  });
+}
+
+// ─── Role-based Nav Visibility ────────────────────────────────────────────────
+
+export function useGetNavVisibility() {
+  return useQuery({
+    queryKey: QUERY_KEYS.NAV_VISIBILITY,
+    queryFn: () => configApi.getNavVisibility().then((r) => r.data.items),
+    staleTime: 60_000,
+  });
+}
+
+export function useUpdateNavVisibility() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ role, hidden }: { role: string; hidden: string[] }) =>
+      configApi.updateNavVisibility(role, hidden).then((r) => r.data.items),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.NAV_VISIBILITY });
+    },
   });
 }

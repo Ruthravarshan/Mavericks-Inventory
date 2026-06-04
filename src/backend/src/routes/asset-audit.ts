@@ -5,9 +5,42 @@ import { assetAudits, assetAssignments, assets, users, activity, notifications }
 import { eq, and, desc, sql } from "drizzle-orm";
 import { requireRole } from "../middleware/rbac.js";
 import logger from "../lib/logger.js";
+import { createSession, getSession } from "../lib/audit-sessions.js";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
+// ─── POST /asset-audit/sessions ───────────────────────────────────────────────
+// Desktop user creates a QR session for cross-device photo capture
+router.post("/sessions", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { asset_id } = req.body;
+    const { token, expiresAt } = createSession(req.user!.id, String(asset_id ?? ""));
+    res.json({ token, expires_at: expiresAt.toISOString() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /asset-audit/sessions/:token ─────────────────────────────────────────
+// Desktop polls to check if mobile has uploaded a photo
+router.get("/sessions/:token", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const session = getSession(String(req.params.token));
+    if (!session || session.userId !== req.user!.id || session.expiresAt.getTime() < Date.now()) {
+      res.status(404).json({ error_code: "NOT_FOUND", message: "Session not found or expired" });
+      return;
+    }
+    if (!session.photoBuffer) {
+      res.json({ status: "waiting" });
+      return;
+    }
+    const dataUrl = `data:${session.photoMime ?? "image/jpeg"};base64,${session.photoBuffer.toString("base64")}`;
+    res.json({ status: "received", photo_data_url: dataUrl });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // ─── GET /asset-audit ──────────────────────────────────────────────────────────
 router.get("/", requireRole("admin", "manager"), async (req: Request, res: Response, next: NextFunction) => {

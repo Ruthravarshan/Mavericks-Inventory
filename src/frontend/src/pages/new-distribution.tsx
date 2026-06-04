@@ -17,10 +17,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "@/hooks/use-toast";
-import { LOCATIONS } from "@/lib/constants";
+import { useLocations } from "@/hooks/use-queries";
+import { fuzzyFilter } from "@/lib/fuzzy";
 
 const distributionSchema = z.object({
   stock_id: z.string().min(1, "Please select a stock item"),
@@ -39,17 +39,25 @@ export default function NewDistributionPage() {
   const navigate = useNavigate();
   const createDistribution = useCreateDistribution();
   const submitDistribution = useSubmitDistribution();
+  const { data: locationsData } = useLocations();
+  const locationsList = locationsData ?? [];
 
   const [selectedStockId, setSelectedStockId] = useState<string>("");
   const [stockSearch, setStockSearch] = useState("");
 
+  // Load a wider pool of active stocks and filter client-side with fuzzy match
+  // so typos and partial matches still surface useful results.
   const { data: stocksData } = useListStocks({
-    search: stockSearch || undefined,
     status: "active",
-    page_size: 50,
+    page_size: 200,
   });
-  const stocks = stocksData?.items ?? [];
-  const selectedStock = stocks.find((s) => s.id === selectedStockId);
+  const allStocks = stocksData?.items ?? [];
+  const stocks = fuzzyFilter(
+    allStocks,
+    stockSearch,
+    [(s) => s.name, (s) => s.stock_code, (s) => s.category]
+  );
+  const selectedStock = allStocks.find((s) => s.id === selectedStockId);
 
   const {
     register,
@@ -82,6 +90,7 @@ export default function NewDistributionPage() {
   async function onSubmit(data: DistributionFormValues) {
     try {
       const dist = await createDistribution.mutateAsync(data);
+      if (!dist?.id) throw new Error("Invalid response from server");
       await submitDistribution.mutateAsync(dist.id);
       toast({ title: "Distribution submitted for approval" });
       navigate("/distributions");
@@ -109,7 +118,7 @@ export default function NewDistributionPage() {
 
       <form className="space-y-6">
         {/* Section 1: Stock Selection */}
-        <Card className="bg-slate-800/50 border-slate-700/50">
+        <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Package className="h-4 w-4 text-[hsl(var(--primary))]" />
@@ -165,7 +174,7 @@ export default function NewDistributionPage() {
             {/* Selected stock info */}
             {selectedStock && (
               <div className="rounded-lg border border-[hsl(var(--primary))]/20 bg-[hsl(var(--primary))]/5 p-4">
-                <div className="grid grid-cols-3 gap-4 text-sm">
+                <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
                   <div>
                     <p className="text-xs text-[hsl(var(--muted-foreground))]">Category</p>
                     <p className="font-medium">{selectedStock.category}</p>
@@ -210,7 +219,7 @@ export default function NewDistributionPage() {
         </Card>
 
         {/* Section 2: Recipient */}
-        <Card className="bg-slate-800/50 border-slate-700/50">
+        <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
           <CardHeader>
             <CardTitle className="text-base">Recipient Information</CardTitle>
           </CardHeader>
@@ -239,7 +248,7 @@ export default function NewDistributionPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>{recipientType === "employee" ? "Employee ID" : "Project ID"} *</Label>
                 <Input
@@ -265,12 +274,12 @@ export default function NewDistributionPage() {
         </Card>
 
         {/* Section 3: Distribution Details */}
-        <Card className="bg-slate-800/50 border-slate-700/50">
+        <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
           <CardHeader>
             <CardTitle className="text-base">Distribution Details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Distribution Date *</Label>
                 <Input
@@ -286,7 +295,7 @@ export default function NewDistributionPage() {
                 <Select onValueChange={(v) => setValue("location", v)}>
                   <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
                   <SelectContent>
-                    {LOCATIONS.map((l) => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                    {locationsList.map((l) => <SelectItem key={l} value={l}>{l}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 {errors.location && (

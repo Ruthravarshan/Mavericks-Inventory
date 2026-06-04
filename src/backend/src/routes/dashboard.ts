@@ -11,7 +11,6 @@ import {
   sql,
   eq,
   and,
-  gte,
   isNull,
   desc,
 } from "drizzle-orm";
@@ -104,17 +103,19 @@ router.get("/summary", async (req: Request, res: Response, next: NextFunction) =
       .orderBy(sql`SUM(d.qty_requested) DESC`)
       .limit(10);
 
-    // Transaction trend: distributions count per day for last 7 days
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const trend = await db
+    // Transaction trend: distributions per day. Take the most recent 30 days
+    // that actually have data (robust to older seed data — avoids an empty chart
+    // when nothing was created in the trailing calendar window).
+    const trendDesc = await db
       .select({
         date: sql<string>`DATE(created_at)::text`,
         count: sql<number>`COUNT(*)`,
       })
       .from(distributions)
-      .where(gte(distributions.createdAt, sevenDaysAgo))
       .groupBy(sql`DATE(created_at)`)
-      .orderBy(sql`DATE(created_at)`);
+      .orderBy(sql`DATE(created_at) DESC`)
+      .limit(30);
+    const trend = [...trendDesc].reverse(); // back to chronological order
 
     res.json({
       total_stocks: Number(stockStats.total),

@@ -29,7 +29,7 @@ interface QueryHistoryItem {
 
 export default function InsightsPage() {
   const qc = useQueryClient();
-  const { data: health, isLoading: healthLoading } = useGetInventoryHealth();
+  const { data: health, isLoading: healthLoading, isFetching: healthFetching } = useGetInventoryHealth();
   const nlQuery = useNLQuery();
 
   const [query, setQuery] = useState("");
@@ -63,7 +63,7 @@ export default function InsightsPage() {
       </div>
 
       {/* AI Health Card */}
-      <Card className="bg-gradient-to-br from-slate-800 via-slate-800 to-teal-900/20 border-teal-500/20">
+      <Card className="border-l-4 border-l-[hsl(var(--primary))] border-[hsl(var(--primary))]/30 bg-[hsl(var(--card))]">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -82,7 +82,7 @@ export default function InsightsPage() {
                 onClick={handleRefreshHealth}
                 disabled={healthLoading}
               >
-                <RefreshCw className={`h-4 w-4 ${healthLoading ? "animate-spin" : ""}`} />
+                <RefreshCw className={`h-4 w-4 transition-transform ${healthLoading || healthFetching ? "animate-spin" : ""}`} />
                 Refresh
               </Button>
             </div>
@@ -104,7 +104,7 @@ export default function InsightsPage() {
             <div className="space-y-5">
               {/* Health score */}
               <div className="flex items-center gap-4">
-                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-slate-900">
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--muted))]">
                   <span className={`text-3xl font-bold ${
                     health.health_score >= 70 ? "text-green-400" :
                     health.health_score >= 40 ? "text-yellow-400" : "text-red-400"
@@ -157,7 +157,7 @@ export default function InsightsPage() {
       </Card>
 
       {/* Conversational Query */}
-      <Card className="bg-slate-800/50 border-slate-700/50">
+      <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
         <CardHeader>
           <div className="flex items-center gap-2">
             <Brain className="h-5 w-5 text-[hsl(var(--primary))]" />
@@ -174,7 +174,7 @@ export default function InsightsPage() {
               <button
                 key={q}
                 onClick={() => handleQuery(q)}
-                className="rounded-full border border-[hsl(var(--border))] bg-slate-900/50 px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] transition-colors hover:border-[hsl(var(--primary))]/50 hover:text-[hsl(var(--foreground))]"
+                className="rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/40 px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] transition-colors hover:border-[hsl(var(--primary))]/50 hover:text-[hsl(var(--foreground))]"
               >
                 {q}
               </button>
@@ -201,7 +201,7 @@ export default function InsightsPage() {
 
           {/* Current result */}
           {nlQuery.isPending && (
-            <div className="space-y-3 rounded-lg bg-slate-900/50 p-4">
+            <div className="space-y-3 rounded-lg bg-[hsl(var(--secondary))]/40 p-4">
               <Skeleton className="h-4 w-3/4" />
               <Skeleton className="h-4 w-full" />
               <Skeleton className="h-4 w-2/3" />
@@ -227,7 +227,7 @@ export default function InsightsPage() {
               {currentResult.data && currentResult.data.length > 0 && currentResult.columns.length > 0 && (
                 <div>
                   <p className="mb-2 text-xs font-medium text-[hsl(var(--muted-foreground))]">Data</p>
-                  <div className="overflow-auto rounded-lg border border-[hsl(var(--border))]">
+                  <div className="overflow-x-auto rounded-lg border border-[hsl(var(--border))]">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -275,7 +275,7 @@ export default function InsightsPage() {
                   <button
                     key={i}
                     onClick={() => setCurrentResult(item.response)}
-                    className="w-full rounded-lg border border-[hsl(var(--border))] bg-slate-900/30 px-3 py-2 text-left text-sm transition-colors hover:border-[hsl(var(--primary))]/30"
+                    className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/30 px-3 py-2 text-left text-sm transition-colors hover:border-[hsl(var(--primary))]/30"
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-medium text-[hsl(var(--foreground))]">{item.query}</span>

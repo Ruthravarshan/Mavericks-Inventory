@@ -20,6 +20,8 @@ import assetAuditRouter from "./asset-audit.js";
 import employeesRouter from "./employees.js";
 import reconciliationRouter from "./reconciliation.js";
 import legalHoldsRouter from "./legal-holds.js";
+import configRouter from "./config.js";
+import auditMobileRouter from "./audit-mobile.js";
 import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
@@ -27,6 +29,7 @@ const router = Router();
 // Public routes (no auth)
 router.use("/health", healthRouter);
 router.use("/auth", authRouter);
+router.use("/audit-mobile", auditMobileRouter); // Token-based auth, no JWT required
 
 // Protected routes (all require authentication)
 router.use("/stocks", authMiddleware, stocksRouter);
@@ -48,5 +51,6 @@ router.use("/asset-audit", authMiddleware, assetAuditRouter);
 router.use("/employees", authMiddleware, employeesRouter);
 router.use("/reconciliation", authMiddleware, reconciliationRouter);
 router.use("/legal-holds", authMiddleware, legalHoldsRouter);
+router.use("/config", authMiddleware, configRouter);
 
 export default router;

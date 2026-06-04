@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 
 const JWT_SECRET = process.env.JWT_SECRET ?? "fallback-dev-secret-change-in-prod";
 const ACCESS_EXPIRY = "8h";
-const REFRESH_EXPIRY = "8h";
+const REFRESH_EXPIRY = "7d";
 
 export interface JwtPayload {
   id: number;

@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CheckCircle2,
@@ -40,6 +41,7 @@ import {
   useApproveL2,
   useRejectL2,
   useBulkApprove,
+  useListDistributions,
 } from "@/hooks/use-queries";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -61,7 +63,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn, formatDateTime, formatRelativeTime } from "@/lib/utils";
-import type { Approval } from "@/types";
+import type { Approval, Distribution } from "@/types";
 
 // ─── Types & Helpers ──────────────────────────────────────────────────────────
 
@@ -70,7 +72,7 @@ type AiRec = "approve" | "review" | "reject";
 type SortMode = "oldest" | "newest" | "highest_risk";
 type TypeFilter = "all" | "distribution" | "return" | "transfer" | "adjustment";
 
-interface EnrichedApproval extends Approval {
+interface EnrichedApproval extends Omit<Approval, "risk_score"> {
   risk_score: RiskScore;
   ai_rec: AiRec;
   ai_reasoning_stub: string;
@@ -80,57 +82,60 @@ interface EnrichedApproval extends Approval {
   risk_factors: string[];
 }
 
-const RISK_SCORE_MAP: RiskScore[] = ["low", "medium", "high", "critical"];
-
-function deriveRiskScore(id: string): RiskScore {
-  const num = parseInt(id, 10);
-  return RISK_SCORE_MAP[(isNaN(num) ? id.charCodeAt(0) : num) % 4];
+// Map the backend's risk_level ("Low" | "Medium" | "High") and numeric
+// risk_score (0..100) into the UI's RiskScore enum.
+function mapRiskScore(item: Approval): RiskScore {
+  // Numeric risk_score takes priority when present.
+  if (typeof item.risk_score === "number") {
+    if (item.risk_score >= 80) return "critical";
+    if (item.risk_score >= 60) return "high";
+    if (item.risk_score >= 30) return "medium";
+    return "low";
+  }
+  const lvl = (item.risk_level ?? "").toString().toLowerCase();
+  if (lvl === "high") return "high";
+  if (lvl === "medium") return "medium";
+  return "low";
 }
 
-function deriveAiRec(risk: RiskScore): AiRec {
-  if (risk === "low") return "approve";
-  if (risk === "medium") return "review";
-  return "reject";
-}
-
-function deriveAiReasoning(risk: RiskScore, stockName: string): string {
-  if (risk === "low")
-    return `Standard request for ${stockName}. Quantity is within normal thresholds and requester has a clean approval history.`;
-  if (risk === "medium")
-    return `Request for ${stockName} requires closer review. Quantity is slightly elevated for this category.`;
-  if (risk === "high")
-    return `High-value request for ${stockName}. Exceeds department average by 2x; manual validation recommended.`;
-  return `Critical risk: ${stockName} request flags policy exceptions. Immediate L2 escalation recommended.`;
-}
-
-function deriveAiConfidence(risk: RiskScore): number {
-  if (risk === "low") return 94;
-  if (risk === "medium") return 76;
-  if (risk === "high") return 81;
-  return 89;
+function mapAiRec(item: Approval): AiRec {
+  const rec = (item.ai_recommendation ?? "").toString().toLowerCase();
+  if (rec === "approve") return "approve";
+  if (rec === "reject") return "reject";
+  return "review";
 }
 
 function deriveRiskFactors(item: Approval): string[] {
+  // Best-effort surfacing of objective factors. No fabrication beyond what the
+  // payload supports.
   const factors: string[] = [];
-  if (item.qty_requested > 20) factors.push("Quantity exceeds department average");
   if (item.risk_level === "High") factors.push("High-value asset category");
-  factors.push(item.days_pending > 2 ? "Pending beyond SLA window" : "Within normal SLA window");
+  if (item.qty_requested >= 50) factors.push("Large quantity requested");
+  else if (item.qty_requested >= 20) factors.push("Above-average quantity");
+  if (item.days_pending >= 3) factors.push("Pending beyond SLA window");
   return factors.slice(0, 3);
 }
 
 function getAgeHours(submittedAt: string): number {
-  const diffMs = Date.now() - new Date(submittedAt).getTime();
-  return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
+  if (!submittedAt) return 0;
+  const ts = new Date(submittedAt).getTime();
+  if (isNaN(ts)) return 0;
+  return Math.max(0, Math.floor((Date.now() - ts) / (1000 * 60 * 60)));
 }
 
 function enrichApproval(item: Approval): EnrichedApproval {
-  const risk_score = deriveRiskScore(item.id);
+  const risk_score = mapRiskScore(item);
   return {
     ...item,
     risk_score,
-    ai_rec: deriveAiRec(risk_score),
-    ai_reasoning_stub: deriveAiReasoning(risk_score, item.stock_name),
-    ai_confidence: deriveAiConfidence(risk_score),
+    ai_rec: mapAiRec(item),
+    ai_reasoning_stub: item.ai_reasoning ?? "AI analysis not available for this request.",
+    // Backend doesn't expose confidence; use the numeric risk score (0..100)
+    // inverted as a rough proxy ("the lower the risk, the higher our confidence
+    // in the approve recommendation"). Falls back to 0 when unknown.
+    ai_confidence: typeof item.risk_score === "number"
+      ? Math.max(0, Math.min(100, 100 - Math.abs(item.risk_score - 50)))
+      : 0,
     sla_hours: 48,
     age_hours: getAgeHours(item.submitted_at),
     risk_factors: deriveRiskFactors(item),
@@ -188,9 +193,9 @@ function AiRecChip({ rec }: { rec: AiRec }) {
 // ─── Type Badge ───────────────────────────────────────────────────────────────
 
 const TYPE_BADGE_STYLES: Record<string, string> = {
-  distribution: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  return: "bg-teal-500/15 text-teal-400 border-teal-500/30",
-  transfer: "bg-purple-500/15 text-purple-400 border-purple-500/30",
+  distribution: "bg-[hsl(var(--info))]/15 text-[hsl(var(--info))] border-[hsl(var(--info))]/30",
+  return: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  transfer: "bg-violet-500/15 text-violet-400 border-violet-500/30",
   adjustment: "bg-orange-500/15 text-orange-400 border-orange-500/30",
 };
 
@@ -356,8 +361,7 @@ function DetailPanel({
 }: DetailPanelProps) {
   const [remarks, setRemarks] = useState("");
 
-  const stockBefore =
-    (item.qty_approved ?? item.qty_requested) + item.qty_requested;
+  const stockBefore = item.qty_requested * 2;
   const stockAfter = stockBefore - item.qty_requested;
   const usagePct = Math.min(
     100,
@@ -812,7 +816,7 @@ function StatCard({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function ApprovalsPage() {
+function PendingQueueView() {
   const { isL2 } = useAuth();
   const { toast } = useToast();
 
@@ -1438,5 +1442,271 @@ export default function ApprovalsPage() {
       </Dialog>
     </div>
   );
+}
+
+// ─── Records Views (History / Override / Zero-Touch) ───────────────────────────
+
+type RecordMode = "history" | "override" | "zero-touch";
+
+function localRisk(level: Distribution["risk_level"]): RiskScore {
+  if (level === "High") return "high";
+  if (level === "Medium") return "medium";
+  return "low";
+}
+function localRec(rec: Distribution["ai_recommendation"]): AiRec {
+  const r = rec.toLowerCase();
+  if (r === "approve") return "approve";
+  if (r === "reject") return "reject";
+  return "review";
+}
+
+function StatusPill({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    approved: "bg-emerald-500/15 text-emerald-500 border-emerald-500/30",
+    rejected: "bg-red-500/15 text-red-500 border-red-500/30",
+  };
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border capitalize",
+        map[status] ?? "bg-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] border-transparent"
+      )}
+    >
+      {status === "approved" ? <CircleCheck className="w-3 h-3" /> : <CircleX className="w-3 h-3" />}
+      {status}
+    </span>
+  );
+}
+
+const RECORD_META: Record<
+  RecordMode,
+  { title: string; subtitle: string; icon: React.ComponentType<{ className?: string }>; accent: string }
+> = {
+  history: {
+    title: "Approval History",
+    subtitle: "Every distribution that has been decided — approved or rejected.",
+    icon: CheckSquare,
+    accent: "text-blue-400",
+  },
+  override: {
+    title: "Override History",
+    subtitle: "Decisions that overrode the AI recommendation — manual judgement applied.",
+    icon: ShieldAlert,
+    accent: "text-orange-400",
+  },
+  "zero-touch": {
+    title: "Zero-Touch Log",
+    subtitle: "Low-risk distributions the AI engine cleared automatically, without manual review.",
+    icon: Zap,
+    accent: "text-violet-400",
+  },
+};
+
+function overrideLabel(d: Distribution): string | null {
+  if (d.status === "approved" && d.ai_recommendation === "Reject")
+    return "Approved despite AI: Reject";
+  if (d.status === "approved" && d.ai_recommendation === "Review")
+    return "Approved on AI: Review";
+  if (d.status === "rejected" && d.ai_recommendation === "Approve")
+    return "Rejected despite AI: Approve";
+  return null;
+}
+
+function ApprovalRecordsView({ mode }: { mode: RecordMode }) {
+  const meta = RECORD_META[mode];
+  const Icon = meta.icon;
+  const [search, setSearch] = useState("");
+
+  // Approvals page is manager/L2/admin only, so this returns org-wide records.
+  const distQuery = useListDistributions({ page_size: 100 });
+  const allItems: Distribution[] = (distQuery.data?.items as Distribution[] | undefined) ?? [];
+
+  const rows = useMemo(() => {
+    let items = allItems.filter((d) => {
+      if (mode === "history") return d.status === "approved" || d.status === "rejected";
+      if (mode === "zero-touch")
+        return d.status === "approved" && d.risk_level === "Low" && d.ai_recommendation === "Approve";
+      if (mode === "override") return overrideLabel(d) !== null;
+      return false;
+    });
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      items = items.filter(
+        (i) =>
+          i.stock_name?.toLowerCase().includes(q) ||
+          i.transaction_code?.toLowerCase().includes(q) ||
+          i.recipient_name?.toLowerCase().includes(q) ||
+          i.created_by_name?.toLowerCase().includes(q)
+      );
+    }
+
+    return items.sort((a, b) => {
+      const ta = new Date(a.submitted_at ?? a.created_at).getTime();
+      const tb = new Date(b.submitted_at ?? b.created_at).getTime();
+      return tb - ta;
+    });
+  }, [allItems, mode, search]);
+
+  const approvedCount = rows.filter((r) => r.status === "approved").length;
+  const rejectedCount = rows.filter((r) => r.status === "rejected").length;
+
+  return (
+    <div className="max-w-5xl mx-auto w-full px-4 py-6 space-y-5">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-[hsl(var(--foreground))]">{meta.title}</h1>
+            <Badge className="bg-[hsl(var(--secondary))] text-[hsl(var(--muted-foreground))] border border-[hsl(var(--border))] text-xs px-2">
+              {rows.length} record{rows.length === 1 ? "" : "s"}
+            </Badge>
+          </div>
+          <p className="text-sm text-[hsl(var(--muted-foreground))] mt-1 flex items-center gap-1.5">
+            <Icon className={cn("w-3.5 h-3.5", meta.accent)} />
+            {meta.subtitle}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void distQuery.refetch()}
+          className="text-xs"
+        >
+          <RotateCcw className="w-3.5 h-3.5 mr-1" />
+          Refresh
+        </Button>
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <StatCard title="Total" value={rows.length} sub="records" icon={Icon} color="bg-[hsl(var(--primary))]/15 text-[hsl(var(--primary))]" />
+        {mode !== "zero-touch" ? (
+          <>
+            <StatCard title="Approved" value={approvedCount} sub="decisions" icon={CircleCheck} color="bg-emerald-500/15 text-emerald-400" />
+            <StatCard title="Rejected" value={rejectedCount} sub="decisions" icon={CircleX} color="bg-red-500/15 text-red-400" />
+          </>
+        ) : (
+          <StatCard title="Auto-cleared" value={approvedCount} sub="no manual review" icon={Zap} color="bg-violet-500/15 text-violet-400" />
+        )}
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[hsl(var(--muted-foreground))]" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search item, requester, code..."
+          className="w-full h-8 pl-9 pr-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-sm text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--primary))]"
+        />
+      </div>
+
+      {/* List */}
+      <div className="space-y-3">
+        {distQuery.isLoading && [1, 2, 3, 4].map((n) => <SkeletonCard key={n} />)}
+
+        {!distQuery.isLoading && rows.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <Inbox className="w-12 h-12 text-[hsl(var(--muted-foreground))]/40 mb-3" />
+            <p className="text-[hsl(var(--foreground))] font-medium">No records yet</p>
+            <p className="text-sm text-[hsl(var(--muted-foreground))] mt-1">
+              {mode === "zero-touch"
+                ? "No distributions have been auto-cleared so far."
+                : mode === "override"
+                ? "No decisions have overridden the AI recommendation."
+                : "No approval decisions have been recorded yet."}
+            </p>
+          </div>
+        )}
+
+        {rows.map((d) => {
+          const ovr = overrideLabel(d);
+          return (
+            <div
+              key={d.id}
+              className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 space-y-2"
+            >
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-mono text-xs font-semibold text-[hsl(var(--foreground))]">
+                  {d.transaction_code}
+                </span>
+                <StatusPill status={d.status} />
+                <RiskBadge risk={localRisk(d.risk_level)} />
+                <AiRecChip rec={localRec(d.ai_recommendation)} />
+                {mode === "zero-touch" && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-violet-500/10 text-violet-400 border border-violet-500/30">
+                    <Zap className="w-3 h-3" />
+                    Auto-approved
+                  </span>
+                )}
+                {mode === "override" && ovr && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-500/10 text-orange-400 border border-orange-500/30">
+                    <ShieldAlert className="w-3 h-3" />
+                    {ovr}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Package className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))] shrink-0" />
+                <span className="text-sm font-medium text-[hsl(var(--foreground))] truncate">
+                  {d.stock_name}
+                </span>
+                <span className="text-xs text-[hsl(var(--muted-foreground))] shrink-0">{d.stock_code}</span>
+              </div>
+
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[hsl(var(--muted-foreground))]">
+                <span className="flex items-center gap-1">
+                  <User className="w-3 h-3" />
+                  {d.recipient_name}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Layers className="w-3 h-3" />
+                  {d.qty_requested} {d.uom}
+                </span>
+                {d.location && (
+                  <span className="flex items-center gap-1">
+                    <MapPin className="w-3 h-3" />
+                    {d.location}
+                  </span>
+                )}
+                <span className="flex items-center gap-1">
+                  <Calendar className="w-3 h-3" />
+                  {formatDateTime(d.submitted_at ?? d.created_at)}
+                </span>
+                {d.created_by_name && <span className="opacity-70">by {d.created_by_name}</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Page Switcher ─────────────────────────────────────────────────────────────
+
+export default function ApprovalsPage() {
+  const [searchParams] = useSearchParams();
+  const { isL2 } = useAuth();
+  const tab = searchParams.get("tab");
+
+  if (tab === "zero-touch") {
+    return (
+      <div className="min-h-screen bg-[hsl(var(--background))]">
+        <ApprovalRecordsView mode="zero-touch" />
+      </div>
+    );
+  }
+  if (tab === "history") {
+    // Managers see their decision log; L2 sees the override log.
+    return (
+      <div className="min-h-screen bg-[hsl(var(--background))]">
+        <ApprovalRecordsView mode={isL2 ? "override" : "history"} />
+      </div>
+    );
+  }
+  return <PendingQueueView />;
 }
 

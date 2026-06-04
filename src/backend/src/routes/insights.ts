@@ -28,12 +28,27 @@ function cacheSet(key: string, data: unknown): void {
 }
 
 const SCHEMA_CONTEXT = `
-Tables:
-- stocks(id, stock_code, stock_name, category, sub_category, unit_of_measure, available_quantity, reserved_quantity, min_stock_level, location, status, health_score)
-- distributions(id, transaction_code, stock_id, qty_requested, distribution_date, recipient_type, recipient_id, recipient_name, purpose, status, created_at)
-- approvals(id, distribution_id, status, ai_risk_level, ai_risk_score, requires_l2, created_at)
-- anomalies(id, stock_id, anomaly_type, severity, description, status, detected_at)
-- stock_ledger(id, stock_id, movement_type, quantity, running_balance, performed_at, source)
+PostgreSQL tables (use EXACT column names shown — do NOT invent column names):
+- stocks(id, stock_code, stock_name, category, sub_category, unit_of_measure, opening_quantity, available_quantity, reserved_quantity, min_stock_level, max_stock_level, location, description, status, health_score, created_at, updated_at, deleted_at)
+  * category values: 'Laptop','Desktop','Monitor','Mobile Phone','Peripherals','Networking','Server','Storage','Software License','Access Card','ID Card','Power Equipment','Cables','Other IT Equipment'
+  * status values: 'active','draft','inactive'
+  * Always filter: WHERE deleted_at IS NULL AND status = 'active' unless the user asks otherwise
+- distributions(id, transaction_code, stock_id, qty_requested, distribution_date, recipient_type, recipient_id, recipient_name, location, purpose, status, ai_risk_score, ai_recommendation, ai_reasoning, ai_confidence, submitted_at, created_at, updated_at, created_by)
+  * status values: 'draft','submitted','l1_pending','l2_pending','approved','rejected'
+  * Join to stocks on distributions.stock_id = stocks.id
+- approvals(id, distribution_id, status, remarks, approved_by, approved_at, ai_recommendation, ai_risk_score, ai_risk_level, ai_reasoning, ai_confidence, requires_l2, l2_status, l2_approved_by, l2_approved_at, l2_remarks, created_at, updated_at)
+  * status values: 'pending','approved','rejected'
+  * l2_status values: 'pending','approved','rejected',null
+  * Join to distributions on approvals.distribution_id = distributions.id
+- anomalies(id, stock_id, anomaly_type, severity, description, explanation, recommended_action, status, detected_at, acknowledged_by, acknowledged_at, resolved_by, resolved_at, resolution_notes, created_at)
+  * severity values: 'critical','warning','info'
+  * status values: 'active','acknowledged','resolved','dismissed'
+  * Join to stocks on anomalies.stock_id = stocks.id
+- stock_ledger(id, stock_id, movement_type, quantity, running_balance, distribution_id, performed_by, performed_at, source, remarks)
+  * movement_type values: 'in','out','adjustment'
+  * Join to stocks on stock_ledger.stock_id = stocks.id
+- users(id, employee_id, full_name, email, role, department, location, is_active, designation, created_at, last_login_at)
+  * role values: 'admin','manager','management_authority','user','executive','auditor'
 `;
 
 // ─── GET /insights/inventory-health ──────────────────────────────────────────
@@ -43,7 +58,7 @@ router.get("/inventory-health", async (req: Request, res: Response, next: NextFu
     const cacheKey = "inventory_health";
     const cached = cacheGet<Record<string, unknown>>(cacheKey);
     if (cached) {
-      res.json({ ...cached, cached: true });
+      res.json(cached);
       return;
     }
 
@@ -132,7 +147,6 @@ router.get("/inventory-health", async (req: Request, res: Response, next: NextFu
       observations: aiNarrative?.observations?.length ? aiNarrative.observations : fallbackObservations,
       recommended_actions: aiNarrative?.recommended_actions?.length ? aiNarrative.recommended_actions : fallbackActions,
       health_score: avgHealth,
-      ai_enhanced: !!aiNarrative,
       last_refreshed: new Date().toISOString(),
     };
 

@@ -20,13 +20,40 @@ class ErrorBoundary extends React.Component<
 
   render() {
     if (this.state.error) {
+      // Use literal colors here since ThemeProvider variables may not be ready
+      // if the crash happened before the provider mounted.
       return (
-        <div className="flex h-screen flex-col items-center justify-center gap-4 bg-slate-900 p-8 text-center">
-          <h1 className="text-2xl font-bold text-white">Something went wrong</h1>
-          <p className="text-sm text-slate-400">{this.state.error.message}</p>
+        <div
+          style={{
+            minHeight: "100vh",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 16,
+            padding: 32,
+            textAlign: "center",
+            background: "#0b0d12",
+            color: "#f4f5f7",
+            fontFamily: "Inter, system-ui, sans-serif",
+          }}
+        >
+          <h1 style={{ fontSize: 24, fontWeight: 700 }}>Something went wrong</h1>
+          <p style={{ fontSize: 14, color: "#94a3b8", maxWidth: 480 }}>
+            {this.state.error.message}
+          </p>
           <button
             onClick={() => window.location.reload()}
-            className="rounded-lg bg-teal-600 px-4 py-2 text-sm text-white hover:bg-teal-500"
+            style={{
+              borderRadius: 8,
+              background: "#f5a623",
+              color: "#1a1208",
+              padding: "10px 18px",
+              fontSize: 14,
+              fontWeight: 600,
+              border: "none",
+              cursor: "pointer",
+            }}
           >
             Reload page
           </button>
@@ -64,20 +91,22 @@ import ProfilePage from "@/pages/profile";
 import LedgerPage from "@/pages/ledger";
 import ReconciliationPage from "@/pages/reconciliation";
 import LegalHoldsPage from "@/pages/legal-holds";
+import MobileAuditPage from "@/pages/mobile-audit";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { accessToken } = useAuth();
-  if (!accessToken) {
-    return <Navigate to="/login" replace />;
-  }
+  const { accessToken, user, isLoading } = useAuth();
+  // While hydrating the stored token, render nothing rather than bouncing.
+  if (isLoading) return null;
+  if (!accessToken) return <Navigate to="/login" replace />;
+  // Token present but user not yet hydrated → keep waiting.
+  if (!user) return null;
   return <>{children}</>;
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { user, accessToken } = useAuth();
-  if (user || accessToken) {
-    return <Navigate to="/dashboard" replace />;
-  }
+  const { accessToken, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (accessToken) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -93,10 +122,26 @@ function ManagerRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Allows any role except auditor (auditors are read-only) for write operations. */
+function NonAuditorRoute({ children }: { children: React.ReactNode }) {
+  const { isAuditor } = useAuth();
+  if (isAuditor) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
+/** Pages that show org-wide data — managers, admin, L2, auditor only. */
+function StaffRoute({ children }: { children: React.ReactNode }) {
+  const { isManagerOrAbove, isAuditor } = useAuth();
+  if (!isManagerOrAbove && !isAuditor) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
 
 function AppRoutes() {
   return (
     <Routes>
+      {/* Fully public — no auth, used by mobile QR scan */}
+      <Route path="/mobile-audit" element={<MobileAuditPage />} />
+
       <Route
         path="/login"
         element={
@@ -115,10 +160,30 @@ function AppRoutes() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
+
+        {/* Catalog — everyone can browse stock */}
         <Route path="/stocks" element={<StocksPage />} />
         <Route path="/stocks/:id" element={<StockDetailPage />} />
-        <Route path="/distributions" element={<DistributionsPage />} />
-        <Route path="/distributions/new" element={<NewDistributionPage />} />
+
+        {/* Distributions — view: staff + execs; create: non-auditors */}
+        <Route
+          path="/distributions"
+          element={
+            <StaffRoute>
+              <DistributionsPage />
+            </StaffRoute>
+          }
+        />
+        <Route
+          path="/distributions/new"
+          element={
+            <NonAuditorRoute>
+              <NewDistributionPage />
+            </NonAuditorRoute>
+          }
+        />
+
+        {/* Approvals — managers + L2 + admin only */}
         <Route
           path="/approvals"
           element={
@@ -127,18 +192,56 @@ function AppRoutes() {
             </ManagerRoute>
           }
         />
-        <Route path="/anomalies" element={<AnomaliesPage />} />
-        <Route path="/insights" element={<InsightsPage />} />
-        <Route path="/reports" element={<ReportsPage />} />
+
+        {/* Anomalies — staff (manager/L2/admin) + auditor */}
+        <Route
+          path="/anomalies"
+          element={
+            <StaffRoute>
+              <AnomaliesPage />
+            </StaffRoute>
+          }
+        />
+
+        {/* Insights / Reports — staff + auditor */}
+        <Route
+          path="/insights"
+          element={
+            <StaffRoute>
+              <InsightsPage />
+            </StaffRoute>
+          }
+        />
+        <Route
+          path="/reports"
+          element={
+            <StaffRoute>
+              <ReportsPage />
+            </StaffRoute>
+          }
+        />
+
+        {/* Audit log — manager+ and auditor */}
         <Route
           path="/audit-log"
           element={
-            <ManagerRoute>
+            <StaffRoute>
               <AuditLogPage />
+            </StaffRoute>
+          }
+        />
+
+        {/* Bulk upload — manager+ only (write op) */}
+        <Route
+          path="/upload"
+          element={
+            <ManagerRoute>
+              <UploadPage />
             </ManagerRoute>
           }
         />
-        <Route path="/upload" element={<UploadPage />} />
+
+        {/* Admin console — admin only */}
         <Route
           path="/admin"
           element={
@@ -147,19 +250,96 @@ function AppRoutes() {
             </AdminRoute>
           }
         />
+
         {/* IT Asset Management routes */}
         <Route path="/my-assets" element={<MyAssetsPage />} />
-        <Route path="/make-request" element={<MakeRequestPage />} />
+        <Route
+          path="/make-request"
+          element={
+            <NonAuditorRoute>
+              <MakeRequestPage />
+            </NonAuditorRoute>
+          }
+        />
         <Route path="/my-requests" element={<MyRequestsPage />} />
-        <Route path="/asset-audit" element={<AssetAuditPage />} />
-        <Route path="/assets" element={<AssetsPage />} />
-        <Route path="/employees" element={<EmployeesPage />} />
-        <Route path="/employees/:id" element={<EmployeeDetailPage />} />
-        <Route path="/manage-requests" element={<ManagerRoute><ManageRequestsPage /></ManagerRoute>} />
+        <Route
+          path="/asset-audit"
+          element={
+            <NonAuditorRoute>
+              <AssetAuditPage />
+            </NonAuditorRoute>
+          }
+        />
+
+        {/* Asset registry — manager+ and auditor (auditor read-only) */}
+        <Route
+          path="/assets"
+          element={
+            <StaffRoute>
+              <AssetsPage />
+            </StaffRoute>
+          }
+        />
+
+        {/* People — manager+ and auditor */}
+        <Route
+          path="/employees"
+          element={
+            <StaffRoute>
+              <EmployeesPage />
+            </StaffRoute>
+          }
+        />
+        <Route
+          path="/employees/:id"
+          element={
+            <StaffRoute>
+              <EmployeeDetailPage />
+            </StaffRoute>
+          }
+        />
+
+        <Route
+          path="/manage-requests"
+          element={
+            <ManagerRoute>
+              <ManageRequestsPage />
+            </ManagerRoute>
+          }
+        />
+
         <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/ledger" element={<LedgerPage />} />
-        <Route path="/reconciliation" element={<ReconciliationPage />} />
-        <Route path="/legal-holds" element={<LegalHoldsPage />} />
+
+        {/* Stock Ledger — manager+ and auditor */}
+        <Route
+          path="/ledger"
+          element={
+            <StaffRoute>
+              <LedgerPage />
+            </StaffRoute>
+          }
+        />
+
+        {/* Reconciliation — admin only (sensitive accounting) */}
+        <Route
+          path="/reconciliation"
+          element={
+            <AdminRoute>
+              <ReconciliationPage />
+            </AdminRoute>
+          }
+        />
+
+        {/* Legal holds — admin only */}
+        <Route
+          path="/legal-holds"
+          element={
+            <StaffRoute>
+              <LegalHoldsPage />
+            </StaffRoute>
+          }
+        />
+
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

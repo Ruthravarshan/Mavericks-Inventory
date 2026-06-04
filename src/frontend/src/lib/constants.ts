@@ -65,21 +65,12 @@ export const HEALTH_COLORS = {
   critical: "bg-red-500/20 text-red-400 border-red-500/30",
 };
 
+// Fallback lists used only while the API response is loading.
+// The authoritative source is GET /api/v1/config/* — use the useCategories/useLocations/useUOM hooks.
 export const STOCK_CATEGORIES = [
-  "Laptop",
-  "Desktop",
-  "Monitor",
-  "Mobile Phone",
-  "Peripherals",
-  "Networking",
-  "Server",
-  "Storage",
-  "Software License",
-  "Access Card",
-  "ID Card",
-  "Power Equipment",
-  "Cables",
-  "Other IT Equipment",
+  "Laptop", "Desktop", "Monitor", "Mobile Phone", "Peripherals",
+  "Networking", "Server", "Storage", "Software License",
+  "Access Card", "ID Card", "Power Equipment", "Cables", "Other IT Equipment",
 ];
 
 export const ASSET_CONDITIONS = ["new", "good", "fair", "poor", "damaged"] as const;
@@ -112,7 +103,7 @@ export const ASSET_STATUS_COLORS: Record<string, string> = {
 };
 
 export const PRIORITY_COLORS: Record<string, string> = {
-  low: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+  low: "bg-[hsl(var(--muted))]/40 text-[hsl(var(--muted-foreground))] border-[hsl(var(--border))]",
   normal: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   urgent: "bg-amber-500/20 text-amber-400 border-amber-500/30",
   critical: "bg-red-500/20 text-red-400 border-red-500/30",
@@ -126,27 +117,16 @@ export const AUDIT_STATUS_COLORS: Record<string, string> = {
   failed: "bg-red-500/20 text-red-400 border-red-500/30",
 };
 
+// Fallback — authoritative source is GET /api/v1/config/uom
 export const UNITS_OF_MEASURE = [
-  "Pieces",
-  "Boxes",
-  "Kg",
-  "Liters",
-  "Meters",
-  "Sets",
-  "Packs",
-  "Units",
-  "Rolls",
-  "Sheets",
+  "Units", "Pieces", "Boxes", "Kg", "Liters",
+  "Meters", "Sets", "Packs", "Rolls", "Sheets",
 ];
 
+// Fallback — authoritative source is GET /api/v1/config/locations
 export const LOCATIONS = [
-  "Warehouse A",
-  "Warehouse B",
-  "Store Room 1",
-  "Store Room 2",
-  "Head Office",
-  "Branch Office",
-  "Main Store",
+  "Warehouse A", "Warehouse B", "Store Room 1", "Store Room 2",
+  "Head Office", "Branch Office", "Main Store",
 ];
 
 export const PAGE_SIZE = 20;
@@ -173,4 +153,8 @@ export const QUERY_KEYS = {
   REQUESTS: ["requests"],
   ASSET_AUDITS: ["asset-audit"],
   EMPLOYEES: ["employees"],
+  CONFIG_CATEGORIES: ["config", "categories"],
+  CONFIG_LOCATIONS: ["config", "locations"],
+  CONFIG_UOM: ["config", "uom"],
+  NAV_VISIBILITY: ["config", "nav-visibility"],
 };

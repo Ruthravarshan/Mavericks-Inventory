@@ -59,6 +59,16 @@ function hashKey(data: unknown): string {
   return createHash("sha256").update(JSON.stringify(data)).digest("hex");
 }
 
+// ─── JSON extraction helper ───────────────────────────────────────────────────
+// Models sometimes wrap their JSON in markdown code fences; this strips them.
+function extractJSON(raw: string): string {
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) return fence[1].trim();
+  // Try to find the first '{' or '[' and return from there
+  const firstBrace = raw.search(/[{[]/);
+  return firstBrace >= 0 ? raw.slice(firstBrace) : raw;
+}
+
 // ─── Azure OpenAI client ──────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -92,31 +102,62 @@ async function getClient(): Promise<any> {
   return openaiClient;
 }
 
+async function callOpenAIOnce(
+  client: unknown,
+  deployment: string,
+  systemPrompt: string,
+  userPrompt: string,
+  useJsonMode: boolean
+): Promise<string | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const c = client as any;
+  const params: Record<string, unknown> = {
+    model: deployment,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.1,
+    max_tokens: 1024,
+  };
+  if (useJsonMode) params.response_format = { type: "json_object" };
+
+  const response = await c.chat.completions.create(params);
+  const content: string | null = response.choices[0]?.message?.content ?? null;
+  return content ? extractJSON(content) : null;
+}
+
 async function callOpenAI(
   systemPrompt: string,
-  userPrompt: string
+  userPrompt: string,
+  maxRetries = 2
 ): Promise<string | null> {
   const client = await getClient();
   if (!client) return null;
 
-  try {
-    const deployment = process.env.AZURE_OPENAI_DEPLOYMENT ?? "gpt-4o";
-    const response = await client.chat.completions.create({
-      model: deployment,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.1,
-      max_tokens: 1024,
-      response_format: { type: "json_object" },
-    });
+  const deployment = process.env.AZURE_OPENAI_DEPLOYMENT ?? "gpt-4o";
+  let useJsonMode = true;
 
-    return response.choices[0]?.message?.content ?? null;
-  } catch (err) {
-    logger.error({ err }, "Azure OpenAI call failed");
-    return null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await callOpenAIOnce(client, deployment, systemPrompt, userPrompt, useJsonMode);
+      return result;
+    } catch (err: unknown) {
+      const errMsg = String((err as { message?: string }).message ?? "");
+      // If JSON mode is not supported switch to plain text for remaining attempts
+      if (useJsonMode && (errMsg.includes("response_format") || errMsg.includes("json_object") || errMsg.includes("not supported"))) {
+        logger.warn("JSON mode not supported, switching to plain text");
+        useJsonMode = false;
+      } else if (attempt === maxRetries) {
+        logger.error({ err, attempt }, "Azure OpenAI call failed after retries");
+        return null;
+      } else {
+        logger.warn({ err, attempt }, "Azure OpenAI call failed, retrying");
+        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+      }
+    }
   }
+  return null;
 }
 
 // ─── 1. analyzeRisk ───────────────────────────────────────────────────────────
@@ -505,21 +546,10 @@ ${stats.criticalItems.length > 0 ? `\nWorst performing items:\n${stats.criticalI
 
 // ─── 5. naturalLanguageQuery ──────────────────────────────────────────────────
 
-const FORBIDDEN_KEYWORDS = [
-  "drop",
-  "delete",
-  "truncate",
-  "insert",
-  "update",
-  "alter",
-  "create",
-  "grant",
-  "revoke",
-  "exec",
-  "execute",
-  "--",
-  ";",
-];
+// Word-boundary patterns prevent false positives: "deleted_at" must not block "delete", "created_at" must not block "create"
+const FORBIDDEN_SQL_WORDS = /\b(drop|delete|truncate|insert|update|alter|create|grant|revoke|execute)\b/i;
+// These are never valid in a bare SELECT and have no legitimate column-name form
+const FORBIDDEN_SQL_CHARS = /--/;
 
 export async function naturalLanguageQuery(
   query: string,
@@ -552,15 +582,12 @@ Rules:
     const sql = (parsed.sql ?? "").replace(/;\s*$/, "");
 
     // Validate SQL is read-only
-    const lowerSql = sql.toLowerCase();
-    for (const keyword of FORBIDDEN_KEYWORDS) {
-      if (lowerSql.includes(keyword)) {
-        logger.warn({ sql, keyword }, "Dangerous keyword detected in AI SQL");
-        return null;
-      }
+    if (FORBIDDEN_SQL_WORDS.test(sql) || FORBIDDEN_SQL_CHARS.test(sql)) {
+      logger.warn({ sql }, "Dangerous keyword or chars detected in AI SQL");
+      return null;
     }
 
-    if (!lowerSql.trim().startsWith("select")) {
+    if (!sql.trim().toLowerCase().startsWith("select")) {
       logger.warn({ sql }, "AI returned non-SELECT statement");
       return null;
     }

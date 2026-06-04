@@ -1,0 +1,15 @@
+node_modules/
+dist/
+
+# Env — copy from .env.example and fill in values
+.env
+.env.local
+.env.production
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

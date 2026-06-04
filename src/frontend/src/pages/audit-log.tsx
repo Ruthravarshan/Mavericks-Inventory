@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Download, FileText } from "lucide-react";
+import { Search, FileText } from "lucide-react";
 import { useGetAuditLog } from "@/hooks/use-queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +34,7 @@ const EVENT_COLOR: Record<string, string> = {
   distribution_approved: "bg-green-500/20 text-green-400",
   distribution_rejected: "bg-red-500/20 text-red-400",
   anomaly_detected: "bg-amber-500/20 text-amber-400",
-  anomaly_resolved: "bg-teal-500/20 text-teal-400",
+  anomaly_resolved: "bg-emerald-500/20 text-emerald-400",
   stock_created: "bg-purple-500/20 text-purple-400",
   stock_deleted: "bg-red-500/20 text-red-400",
 };
@@ -71,7 +71,7 @@ export default function AuditLogPage() {
       </div>
 
       {/* Filters */}
-      <Card className="bg-slate-800/50 border-slate-700/50">
+      <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
         <CardContent className="pt-4">
           <div className="flex flex-wrap items-end gap-4">
             <div className="relative min-w-[220px] flex-1">
@@ -122,7 +122,7 @@ export default function AuditLogPage() {
       </Card>
 
       {/* Table */}
-      <div className="rounded-lg border border-[hsl(var(--border))] bg-slate-800/30">
+      <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))]">
         <Table>
           <TableHeader>
             <TableRow>

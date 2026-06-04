@@ -18,6 +18,7 @@ import {
   ne,
   sql,
   inArray,
+  type SQL,
 } from "drizzle-orm";
 import { analyzeRisk } from "../lib/azure-openai.js";
 
@@ -108,7 +109,7 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
     const page_size = Math.min(100, Math.max(1, Number(req.query.page_size ?? req.query.limit ?? 20)));
     const offset = (page - 1) * page_size;
 
-    const conditions: ReturnType<typeof eq>[] = [];
+    const conditions: SQL<unknown>[] = [];
 
     if (role === "executive") {
       conditions.push(eq(distributions.createdBy, userId));

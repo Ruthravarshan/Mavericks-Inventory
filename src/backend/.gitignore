@@ -1,0 +1,22 @@
+node_modules/
+dist/
+
+# Secrets — never commit real values
+.env
+.env.local
+.env.production
+
+# Drizzle generated migrations (optional — remove if you want to track them)
+drizzle/
+
+# Logs
+*.log
+logs/
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

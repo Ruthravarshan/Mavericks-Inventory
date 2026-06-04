@@ -21,10 +21,12 @@ export interface Stock {
   uom: string;
   total_qty: number;
   available_qty: number;
+  reserved_qty: number;
   distributed_qty: number;
   min_level: number;
   max_level: number;
   location: string;
+  description: string;
   status: "active" | "inactive" | "draft";
   health_score: number;
   health_status: "healthy" | "warning" | "critical";
@@ -565,6 +567,7 @@ export interface CreateStockRequest {
   max_level: number;
   location: string;
   status: "active" | "inactive" | "draft";
+  description?: string;
 }
 
 export interface CreateDistributionRequest {

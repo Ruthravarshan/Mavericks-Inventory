@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -166,9 +166,9 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="flex h-full gap-6">
+    <div className="flex flex-col gap-6 lg:flex-row lg:h-full">
       {/* Sidebar report list */}
-      <div className="w-64 shrink-0 space-y-1">
+      <div className="w-full shrink-0 space-y-1 lg:w-64">
         <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))]">
           Reports
         </p>
@@ -184,7 +184,7 @@ export default function ReportsPage() {
               "w-full rounded-lg p-3 text-left text-sm transition-colors",
               selectedReport.id === report.id
                 ? "bg-[hsl(var(--primary))]/15 text-[hsl(var(--primary))]"
-                : "text-[hsl(var(--muted-foreground))] hover:bg-slate-800/50 hover:text-[hsl(var(--foreground))]"
+                : "text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--secondary))] hover:text-[hsl(var(--foreground))]"
             )}
           >
             <div className="flex items-center gap-2">
@@ -204,7 +204,7 @@ export default function ReportsPage() {
 
         {/* Filters */}
         {selectedReport.filters.length > 0 && (
-          <Card className="bg-slate-800/50 border-slate-700/50">
+          <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
             <CardContent className="pt-4">
               <div className="flex flex-wrap items-end gap-4">
                 {selectedReport.filters.map((filter) => (
@@ -280,8 +280,8 @@ export default function ReportsPage() {
         )}
 
         {/* Results table */}
-        <Card className="bg-slate-800/30 border-slate-700/50">
-          <div className="overflow-auto">
+        <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>

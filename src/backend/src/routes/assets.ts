@@ -10,7 +10,7 @@ const router = Router();
 const createAssetSchema = z.object({
   asset_tag: z.string().min(1),
   serial_number: z.string().optional(),
-  stock_id: z.number().optional(),
+  stock_id: z.coerce.number().optional(),
   category: z.string().min(1),
   sub_category: z.string().optional(),
   brand: z.string().optional(),

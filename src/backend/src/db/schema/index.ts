@@ -13,3 +13,4 @@ export * from "./asset_requests.js";
 export * from "./asset_audits.js";
 export * from "./reconciliation.js";
 export * from "./legal_holds.js";
+export * from "./config.js";

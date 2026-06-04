@@ -12,13 +12,55 @@ const TYPE_CONFIG: Record<MovementType, { label: string; icon: React.ComponentTy
   adjustment: { label: "Adjustment",  icon: SlidersHorizontal, color: "text-amber-400 bg-amber-400/10" },
 };
 
+function exportLedgerToCsv(entries: LedgerEntry[]) {
+  if (entries.length === 0) return;
+  const headers = [
+    "Timestamp",
+    "Stock Code",
+    "Stock Name",
+    "Type",
+    "Qty Change",
+    "Qty Before",
+    "Qty After",
+    "Transaction Code",
+    "Actor",
+    "Remarks",
+  ];
+  const escape = (v: unknown) => {
+    const s = v == null ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const rows = entries.map((e) => [
+    e.created_at,
+    e.stock_code,
+    e.stock_name,
+    e.transaction_type,
+    e.qty_change,
+    e.qty_before,
+    e.qty_after,
+    e.transaction_code ?? "",
+    e.actor_name,
+    e.remarks ?? "",
+  ].map(escape).join(","));
+  const csv = [headers.join(","), ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `stock-ledger-${new Date().toISOString().split("T")[0]}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export default function LedgerPage() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | MovementType>("all");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
 
-  const { data, isLoading, refetch } = useGetLedger({ page, page_size: PAGE_SIZE });
+  const { data, isLoading, isFetching, refetch } = useGetLedger({ page, page_size: PAGE_SIZE });
   const entries: LedgerEntry[] = data?.items ?? [];
   const totalPages = data?.total_pages ?? 1;
   const total = data?.total ?? 0;
@@ -54,10 +96,15 @@ export default function LedgerPage() {
             onClick={() => refetch()}
             className="flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs font-medium text-[hsl(var(--foreground))] hover:bg-[hsl(var(--secondary))] transition-colors"
           >
-            <RefreshCw className="h-3.5 w-3.5" />
+            <RefreshCw className={`h-3.5 w-3.5 transition-transform ${isFetching ? "animate-spin" : ""}`} />
             Refresh
           </button>
-          <button className="flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs font-medium text-[hsl(var(--foreground))] hover:bg-[hsl(var(--secondary))] transition-colors">
+          <button
+            onClick={() => exportLedgerToCsv(filtered)}
+            disabled={filtered.length === 0}
+            className="flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs font-medium text-[hsl(var(--foreground))] hover:bg-[hsl(var(--secondary))] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title={filtered.length === 0 ? "No entries to export" : "Download as CSV"}
+          >
             <Download className="h-3.5 w-3.5" />
             Export Ledger
           </button>

@@ -49,7 +49,7 @@ function getNotificationIconColor(type: string): string {
     case "request_fulfilled":
       return "text-purple-400";
     case "audit_reviewed":
-      return "text-teal-400";
+      return "text-emerald-400";
     default:
       return "text-[hsl(var(--muted-foreground))]";
   }

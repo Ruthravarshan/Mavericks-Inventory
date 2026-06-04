@@ -96,6 +96,27 @@ export function getPresetVars(preset: ThemePreset, mode: ThemeMode): ThemeVars {
 // ── Built-in presets ──────────────────────────────────────────────
 export const BUILT_IN_PRESETS: ThemePreset[] = [
   {
+    id: "obsidian",
+    name: "Obsidian",
+    builtIn: true,
+    dark: {
+      background:        "220 24%  6%",
+      foreground:        "210 24% 96%",
+      card:              "220 22% 10%",
+      primary:           " 36 95% 62%",
+      border:            "220 18% 16%",
+      "muted-foreground":"215 14% 60%",
+    },
+    light: {
+      background:        " 30 20% 97%",
+      foreground:        "220 30% 12%",
+      card:              "  0  0% 100%",
+      primary:           " 25 90% 45%",
+      border:            " 30 15% 88%",
+      "muted-foreground":"220 12% 44%",
+    },
+  },
+  {
     id: "slate",
     name: "Slate",
     builtIn: true,
@@ -103,15 +124,15 @@ export const BUILT_IN_PRESETS: ThemePreset[] = [
       background:        "222 47% 11%",
       foreground:        "210 40% 98%",
       card:              "217 33% 17%",
-      primary:           "210 40% 98%",
-      border:            "217 33% 17%",
+      primary:           "174 72% 56%",
+      border:            "217 33% 22%",
       "muted-foreground":"215 20% 65%",
     },
     light: {
       background:        "0 0% 100%",
       foreground:        "222 47% 11%",
       card:              "0 0% 100%",
-      primary:           "222 47% 11%",
+      primary:           "174 84% 32%",
       border:            "214 32% 91%",
       "muted-foreground":"215 16% 47%",
     },
@@ -228,31 +249,56 @@ const KEY_VARS: ThemeVarKey[] = [
   "background", "foreground", "card", "primary", "border", "muted-foreground",
 ];
 
+// Determine if a color is on a light background (lightness > 50%)
+function isLightBg(hsl: string): boolean {
+  const p = hsl.trim().split(/\s+/);
+  return parseFloat(p[2] ?? "0") > 50;
+}
+
 export function applyThemeToDom(vars: ThemeVars) {
   const html = document.documentElement;
   for (const key of KEY_VARS) {
     html.style.setProperty(`--${key}`, vars[key]);
   }
+  const light = isLightBg(vars.background);
+  // For dark themes, bump UP (lighter). For light themes, bump DOWN (subtle gray).
+  const sign = light ? -1 : 1;
+  // Primary foreground should contrast with the primary color
+  const primaryParts = vars.primary.trim().split(/\s+/);
+  const primaryL = parseFloat(primaryParts[2] ?? "0");
+  const primaryFg = primaryL > 55 ? "220 30% 8%" : "0 0% 100%";
+
   const derived: [string, string][] = [
     ["card-foreground",      vars.foreground],
     ["popover",              vars.card],
     ["popover-foreground",   vars.foreground],
-    ["primary-foreground",   vars.background],
-    ["secondary",            bumpL(vars.card, 4)],
-    ["secondary-foreground", vars["muted-foreground"]],
-    ["muted",                bumpL(vars.card, 2)],
-    ["accent",               bumpL(vars.card, 5)],
+    ["primary-foreground",   primaryFg],
+    ["secondary",            bumpL(vars.card, sign * 4)],
+    ["secondary-foreground", vars.foreground],
+    ["muted",                bumpL(vars.card, sign * 2)],
+    ["muted-foreground",     vars["muted-foreground"]],
+    ["accent",               bumpL(vars.card, sign * 6)],
     ["accent-foreground",    vars.foreground],
+    ["destructive",          light ? "0 84% 50%" : "0 75% 60%"],
+    ["destructive-foreground", "0 0% 100%"],
     ["input",                vars.border],
     ["ring",                 vars.primary],
+    // chart palette
+    ["chart-grid",           vars.border],
+    ["chart-text",           vars["muted-foreground"]],
+    ["chart-tooltip-bg",     vars.card],
+    ["chart-tooltip-border", vars.border],
+    ["chart-tooltip-text",   vars.foreground],
+    // semantic accents — calibrated for both modes
+    ["success",              light ? "158 64% 36%" : "158 64% 52%"],
+    ["warning",              light ? " 32 92% 42%" : " 36 95% 58%"],
+    ["info",                 light ? "212 89% 42%" : "212 89% 60%"],
   ];
   for (const [key, val] of derived) {
     html.style.setProperty(`--${key}`, val);
   }
-  // Auto light-class based on background lightness
-  const bgL = parseFloat(vars.background.trim().split(/\s+/)[2] ?? "0");
-  if (bgL > 50) { html.classList.add("light"); }
-  else          { html.classList.remove("light"); }
+  if (light) html.classList.add("light");
+  else       html.classList.remove("light");
 }
 
 // ── Context ───────────────────────────────────────────────────────
@@ -273,7 +319,11 @@ interface ThemeContextValue {
 
 const ThemeCtx = createContext<ThemeContextValue | null>(null);
 
-const STORAGE_KEY = "mavericks_theme_v3";
+// Bumped from v3 → v4 when the default preset switched from "slate" (teal) to
+// "obsidian" (amber). Old saved values are intentionally discarded so existing
+// users see the new default on first load.
+const STORAGE_KEY = "mavericks_theme_v4";
+const LEGACY_STORAGE_KEYS = ["mavericks_theme_v3", "mavericks_theme_v2", "mavericks_theme"];
 
 interface StoredData {
   activePresetId: string;
@@ -283,7 +333,7 @@ interface StoredData {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>("dark");
-  const [activePresetId, setActivePresetId] = useState("slate");
+  const [activePresetId, setActivePresetId] = useState("obsidian");
   const [currentVars, setCurrentVars] = useState<ThemeVars>(BUILT_IN_PRESETS[0].dark!);
   const [savedPresets, setSavedPresets] = useState<ThemePreset[]>([]);
   const [customizerOpen, setCustomizerOpen] = useState(false);
@@ -294,6 +344,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
+    // Always apply default theme first so initial paint matches design tokens
+    applyThemeToDom(BUILT_IN_PRESETS[0].dark!);
+    // Drop any legacy theme storage (older versions used different defaults)
+    try {
+      for (const k of LEGACY_STORAGE_KEYS) localStorage.removeItem(k);
+    } catch { /* ignore */ }
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;

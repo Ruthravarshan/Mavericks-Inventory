@@ -16,7 +16,8 @@ import {
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { assetsApi, employeesApi } from "@/lib/api";
-import { QUERY_KEYS, CONDITION_COLORS, ASSET_STATUS_COLORS, STOCK_CATEGORIES } from "@/lib/constants";
+import { QUERY_KEYS, CONDITION_COLORS, ASSET_STATUS_COLORS } from "@/lib/constants";
+import { useCategories } from "@/hooks/use-queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -380,6 +381,8 @@ export default function AssetsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { isManagerOrAbove } = useAuth();
+  const { data: categoriesData } = useCategories();
+  const categories = categoriesData ?? [];
 
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -585,7 +588,7 @@ export default function AssetsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Categories</SelectItem>
-              {STOCK_CATEGORIES.map((c) => (
+              {categories.map((c) => (
                 <SelectItem key={c} value={c}>
                   {c}
                 </SelectItem>
@@ -617,7 +620,7 @@ export default function AssetsPage() {
 
       {/* Table / States */}
       {isLoading ? (
-        <div className="overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))]">
+        <div className="overflow-x-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))]">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[hsl(var(--border))] bg-[hsl(var(--secondary))]">
@@ -658,7 +661,7 @@ export default function AssetsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))]">
+        <div className="overflow-x-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))]">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[hsl(var(--border))] bg-[hsl(var(--secondary))]">
@@ -788,7 +791,7 @@ export default function AssetsPage() {
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
-                      {STOCK_CATEGORIES.map((c) => (
+                      {categories.map((c) => (
                         <SelectItem key={c} value={c}>
                           {c}
                         </SelectItem>

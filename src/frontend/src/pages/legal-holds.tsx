@@ -147,10 +147,6 @@ export default function LegalHoldsPage() {
   const holds: LegalHoldItem[] = data?.items ?? [];
   const activeHolds = data?.active_count ?? 0;
   const totalLocked = data?.total_locked ?? 0;
-  const releasedCount = holds.filter((h) => h.status === "released").length;
-
-  const selectedItem = holds.find((h) => h.id === selected);
-
   return (
     <div className="space-y-6">
       {/* Header */}

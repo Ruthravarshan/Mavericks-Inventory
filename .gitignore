@@ -51,3 +51,8 @@ terraform/tfplan
 terraform/terraform.tfvars
 terraform/*.tfvars
 !terraform/terraform.tfvars.example
+
+# Test artifacts — keep scripts, not results
+tests/results/
+tests/node_modules/
+*.log

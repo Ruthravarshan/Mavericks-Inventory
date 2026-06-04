@@ -64,7 +64,7 @@ export default function StockDetailPage() {
           { label: "Distributed", value: stock.distributed_qty.toLocaleString(), sub: stock.uom },
           { label: "Utilization", value: `${utilization}%`, sub: "of total" },
         ].map(({ label, value, sub }) => (
-          <Card key={label} className="bg-slate-800/50 border-slate-700/50">
+          <Card key={label} className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
             <CardContent className="p-5">
               <p className="text-sm text-[hsl(var(--muted-foreground))]">{label}</p>
               <p className="mt-1 text-3xl font-bold">{value}</p>
@@ -76,7 +76,7 @@ export default function StockDetailPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Details card */}
-        <Card className="bg-slate-800/50 border-slate-700/50">
+        <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
           <CardHeader>
             <CardTitle className="text-base">Stock Information</CardTitle>
           </CardHeader>
@@ -92,7 +92,7 @@ export default function StockDetailPage() {
                 { label: "Last Updated", value: formatDate(stock.last_updated) },
                 { label: "Created", value: formatDate(stock.created_at) },
               ].map(({ label, value }) => (
-                <div key={label} className="flex items-center justify-between border-b border-slate-700/50 pb-3 last:border-0 last:pb-0">
+                <div key={label} className="flex items-center justify-between border-b border-[hsl(var(--border))]/50 pb-3 last:border-0 last:pb-0">
                   <dt className="text-sm text-[hsl(var(--muted-foreground))]">{label}</dt>
                   <dd className="text-sm font-medium capitalize">{value}</dd>
                 </div>
@@ -102,7 +102,7 @@ export default function StockDetailPage() {
         </Card>
 
         {/* Stock levels */}
-        <Card className="bg-slate-800/50 border-slate-700/50">
+        <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
           <CardHeader>
             <CardTitle className="text-base">Stock Level Indicator</CardTitle>
           </CardHeader>
@@ -114,7 +114,7 @@ export default function StockDetailPage() {
                   {stock.available_qty >= stock.min_level ? "Above Min" : "Below Min"}
                 </span>
               </div>
-              <div className="h-3 overflow-hidden rounded-full bg-slate-700">
+              <div className="h-3 overflow-hidden rounded-full bg-[hsl(var(--muted))]">
                 <div
                   className={`h-full rounded-full transition-all ${
                     stock.available_qty >= stock.min_level ? "bg-green-500" : "bg-red-500"
@@ -132,14 +132,14 @@ export default function StockDetailPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-3 pt-2">
-              <div className="rounded-lg bg-slate-900/50 p-3">
+              <div className="rounded-lg bg-[hsl(var(--secondary))]/30 p-3">
                 <div className="flex items-center gap-2 text-green-400">
                   <TrendingUp className="h-4 w-4" />
                   <span className="text-xs font-medium">Health Score</span>
                 </div>
                 <p className="mt-1 text-2xl font-bold">{stock.health_score}</p>
               </div>
-              <div className="rounded-lg bg-slate-900/50 p-3">
+              <div className="rounded-lg bg-[hsl(var(--secondary))]/30 p-3">
                 <div className="flex items-center gap-2 text-blue-400">
                   <TrendingDown className="h-4 w-4" />
                   <span className="text-xs font-medium">Distributed</span>
@@ -152,7 +152,7 @@ export default function StockDetailPage() {
       </div>
 
       {/* Ledger */}
-      <Card className="bg-slate-800/50 border-slate-700/50">
+      <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
         <CardHeader>
           <CardTitle className="text-base">Transaction Ledger</CardTitle>
         </CardHeader>

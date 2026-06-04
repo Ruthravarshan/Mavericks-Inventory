@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, CheckCircle2, AlertTriangle, Clock, ChevronRight, Play, FileSpreadsheet } from "lucide-react";
+import { RefreshCw, CheckCircle2, AlertTriangle, Clock, ChevronRight, Play, FileSpreadsheet, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { reconciliationApi, type ReconciliationItem } from "@/lib/api";
+import { toast } from "@/hooks/use-toast";
 
 type ReconcileStatus = "matched" | "variance" | "pending" | "draft_adjustment";
 
@@ -18,6 +19,8 @@ export default function ReconciliationPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [physicalInput, setPhysicalInput] = useState<Record<string, string>>({});
   const [runningRecon, setRunningRecon] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["reconciliation"],
@@ -32,6 +35,62 @@ export default function ReconciliationPage() {
       void qc.invalidateQueries({ queryKey: ["reconciliation"] });
     },
   });
+
+  async function handleImportFile(file: File) {
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter((l) => l.trim());
+      if (lines.length === 0) {
+        toast({ title: "Empty file", variant: "destructive" });
+        return;
+      }
+      // Expect header row: stock_code, physical_qty (case-insensitive)
+      const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
+      const codeCol = header.findIndex((h) => h.includes("code"));
+      const qtyCol  = header.findIndex((h) => h.includes("qty") || h.includes("count") || h.includes("physical"));
+      if (codeCol === -1 || qtyCol === -1) {
+        toast({
+          title: "Invalid format",
+          description: "CSV must have 'stock_code' and 'physical_qty' columns.",
+          variant: "destructive",
+        });
+        return;
+      }
+      // Match codes to items
+      const itemsByCode = new Map((data?.items ?? []).map((i) => [i.stock_code.toUpperCase(), i]));
+      let success = 0;
+      let failed = 0;
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
+        const code = (cols[codeCol] ?? "").toUpperCase();
+        const qty = Number(cols[qtyCol]);
+        const item = itemsByCode.get(code);
+        if (!item || isNaN(qty) || qty < 0) { failed++; continue; }
+        try {
+          await reconciliationApi.submitCount(item.id, qty);
+          success++;
+        } catch {
+          failed++;
+        }
+      }
+      void qc.invalidateQueries({ queryKey: ["reconciliation"] });
+      toast({
+        title: `Imported ${success} count${success !== 1 ? "s" : ""}`,
+        description: failed > 0 ? `${failed} row${failed > 1 ? "s" : ""} skipped (unknown code or invalid qty).` : undefined,
+        variant: failed > 0 && success === 0 ? "destructive" : "default",
+      });
+    } catch (e) {
+      toast({
+        title: "Import failed",
+        description: e instanceof Error ? e.message : "Could not parse file.",
+        variant: "destructive",
+      });
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
 
   const items: ReconciliationItem[] = data?.items ?? [];
   const summary = data?.summary ?? { matched: 0, variance: 0, draft_adjustment: 0, pending: 0 };
@@ -68,9 +127,28 @@ export default function ReconciliationPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <button className="flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs font-medium text-[hsl(var(--foreground))] hover:bg-[hsl(var(--secondary))] transition-colors">
-              <FileSpreadsheet className="h-3.5 w-3.5" />
-              Import Count Sheet
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void handleImportFile(f);
+              }}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing}
+              title="Upload a CSV with columns: stock_code, physical_qty"
+              className="flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs font-medium text-[hsl(var(--foreground))] hover:bg-[hsl(var(--secondary))] transition-colors disabled:opacity-60"
+            >
+              {importing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="h-3.5 w-3.5" />
+              )}
+              {importing ? "Importing…" : "Import Count Sheet"}
             </button>
             <button
               onClick={runReconciliation}
@@ -99,7 +177,7 @@ export default function ReconciliationPage() {
         </div>
 
         {/* Items table */}
-        <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] overflow-hidden">
+        <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/30">

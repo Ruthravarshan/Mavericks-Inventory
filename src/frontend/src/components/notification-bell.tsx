@@ -1,4 +1,5 @@
 import { Bell } from "lucide-react";
+import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,12 +29,26 @@ export function NotificationBell() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
+        <Button variant="ghost" size="icon" className="relative group">
+          <motion.span
+            animate={unreadCount > 0 ? { rotate: [0, -12, 12, -8, 8, 0] } : { rotate: 0 }}
+            transition={{ duration: 0.8, repeat: unreadCount > 0 ? Infinity : 0, repeatDelay: 5 }}
+            className="inline-flex"
+          >
+            <Bell className="h-5 w-5" />
+          </motion.span>
           {unreadCount > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-              {unreadCount > 9 ? "9+" : unreadCount}
-            </span>
+            <>
+              <motion.span
+                initial={{ scale: 0.4, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: "spring", stiffness: 500, damping: 22 }}
+                className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm shadow-red-500/40"
+              >
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </motion.span>
+              <span className="absolute -right-0.5 -top-0.5 h-4 w-4 animate-ping rounded-full bg-red-500/40" />
+            </>
           )}
         </Button>
       </DropdownMenuTrigger>

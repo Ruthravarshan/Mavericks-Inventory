@@ -2,62 +2,26 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, Outlet } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  LayoutDashboard,
-  CheckSquare,
-  Package,
-  ArrowRightLeft,
-  AlertTriangle,
-  Brain,
-  BarChart3,
-  FileText,
-  Upload,
-  Settings,
   LogOut,
   Menu,
   X,
   ChevronRight,
-  Laptop,
-  Users,
-  PlusCircle,
-  Camera,
-  ClipboardList,
-  Tag,
   User,
   Palette,
-  History,
-  BookOpen,
-  TrendingUp,
-  Activity,
-  Lock,
-  Zap,
-  Database,
-  ShieldCheck,
-  RefreshCw,
-  Scale,
-  GitBranch,
-  Boxes,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { useTheme } from "@/contexts/theme-context";
-import { useGetDashboardSummary, useListAnomalies } from "@/hooks/use-queries";
+import {
+  useGetDashboardSummary,
+  useListAnomalies,
+  useGetNavVisibility,
+} from "@/hooks/use-queries";
 import { NotificationPanel } from "@/components/notification-panel";
 import { ThemeCustomizer } from "@/components/theme-customizer";
 import { Button } from "@/components/ui/button";
 import { ROLE_LABELS } from "@/lib/constants";
-
-interface NavItem {
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  href: string;
-  badge?: number;
-  roles?: string[];
-}
-
-interface NavSection {
-  label: string;
-  items: NavItem[];
-}
+import { getRoleNav, type BadgeKey } from "@/lib/nav";
 
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -70,6 +34,7 @@ export function AppLayout() {
 
   const { data: summary } = useGetDashboardSummary();
   const { data: anomaliesData } = useListAnomalies({ severity: "critical", status: "active" });
+  const { data: navVisibility } = useGetNavVisibility();
 
   const criticalAnomalies = anomaliesData?.items.length ?? 0;
   const pendingApprovals = summary?.pending_approvals ?? 0;
@@ -93,246 +58,29 @@ export function AppLayout() {
     navigate("/login");
   }
 
-  // ── Employee (user) ──────────────────────────────────────────────
-  const employeeSections: NavSection[] = [
-    {
-      label: "WORKSPACE",
-      items: [
-        { label: "Dashboard",         icon: LayoutDashboard, href: "/dashboard" },
-        { label: "My Inventory",      icon: Laptop,          href: "/my-assets" },
-        { label: "Create Request",    icon: PlusCircle,      href: "/make-request" },
-        { label: "My Requests",       icon: ClipboardList,   href: "/my-requests" },
-        { label: "Submit Audit",      icon: Camera,          href: "/asset-audit" },
-      ],
-    },
-    {
-      label: "CATALOG",
-      items: [
-        { label: "Stock Catalog",     icon: Package,         href: "/stocks" },
-      ],
-    },
-  ];
+  // Badge counts injected into shared nav definitions by key.
+  const badges: Record<BadgeKey, number> = {
+    pendingApprovals,
+    criticalAnomalies,
+  };
 
-  // ── Executive ─────────────────────────────────────────────────────
-  const executiveSections: NavSection[] = [
-    {
-      label: "WORKSPACE",
-      items: [
-        { label: "Dashboard",         icon: LayoutDashboard, href: "/dashboard" },
-        { label: "My Inventory",      icon: Laptop,          href: "/my-assets" },
-        { label: "Create Transaction",icon: PlusCircle,      href: "/make-request" },
-        { label: "My Requests",       icon: ClipboardList,   href: "/my-requests" },
-        { label: "Submit Audit",      icon: Camera,          href: "/asset-audit" },
-      ],
-    },
-    {
-      label: "CATALOG",
-      items: [
-        { label: "Stock Catalog",     icon: Package,         href: "/stocks" },
-        { label: "Distributions",     icon: ArrowRightLeft,  href: "/distributions" },
-      ],
-    },
-  ];
+  // Admin-controlled per-role tab visibility (server-persisted). Items whose
+  // href is in the role's hidden list are removed; empty sections are dropped.
+  const hiddenForRole = navVisibility?.[userRole] ?? [];
 
-  // ── Manager (L1 Approver) ─────────────────────────────────────────
-  const managerSections: NavSection[] = [
-    {
-      label: "WORKSPACE",
-      items: [
-        { label: "Dashboard",         icon: LayoutDashboard, href: "/dashboard" },
-      ],
-    },
-    {
-      label: "APPROVALS",
-      items: [
-        { label: "Approval Workbench",icon: CheckSquare,     href: "/approvals",      badge: pendingApprovals },
-        { label: "Approval History",  icon: History,         href: "/approvals?tab=history" },
-        { label: "Anomalies",         icon: AlertTriangle,   href: "/anomalies",      badge: criticalAnomalies },
-      ],
-    },
-    {
-      label: "INVENTORY",
-      items: [
-        { label: "Stock Master",      icon: Package,         href: "/stocks" },
-        { label: "Stock Ledger",      icon: BookOpen,        href: "/ledger" },
-        { label: "Distributions",     icon: ArrowRightLeft,  href: "/distributions" },
-        { label: "Asset Registry",    icon: Tag,             href: "/assets" },
-      ],
-    },
-    {
-      label: "PEOPLE",
-      items: [
-        { label: "Employees",         icon: Users,           href: "/employees" },
-        { label: "Asset Requests",    icon: ClipboardList,   href: "/manage-requests", badge: pendingApprovals },
-      ],
-    },
-    {
-      label: "ANALYTICS",
-      items: [
-        { label: "AI Insights",       icon: Brain,           href: "/insights" },
-        { label: "Reports",           icon: BarChart3,       href: "/reports" },
-      ],
-    },
-    {
-      label: "OPERATIONS",
-      items: [
-        { label: "Audit Log",         icon: FileText,        href: "/audit-log" },
-        { label: "Bulk Upload",       icon: Upload,          href: "/upload" },
-      ],
-    },
-  ];
-
-  // ── Management Authority (L2 Final Approver) ──────────────────────
-  const l2Sections: NavSection[] = [
-    {
-      label: "WORKSPACE",
-      items: [
-        { label: "Dashboard",         icon: LayoutDashboard, href: "/dashboard" },
-      ],
-    },
-    {
-      label: "FINAL APPROVALS",
-      items: [
-        { label: "Exception Queue",   icon: CheckSquare,     href: "/approvals",      badge: pendingApprovals },
-        { label: "Override History",  icon: History,         href: "/approvals?tab=history" },
-        { label: "Zero-Touch Log",    icon: Zap,             href: "/approvals?tab=zero-touch" },
-        { label: "Anomalies",         icon: AlertTriangle,   href: "/anomalies",      badge: criticalAnomalies },
-      ],
-    },
-    {
-      label: "OVERSIGHT",
-      items: [
-        { label: "KPI Analytics",     icon: TrendingUp,      href: "/insights" },
-        { label: "Reports",           icon: BarChart3,       href: "/reports" },
-      ],
-    },
-    {
-      label: "INVENTORY",
-      items: [
-        { label: "Stock Master",      icon: Package,         href: "/stocks" },
-        { label: "Stock Ledger",      icon: BookOpen,        href: "/ledger" },
-        { label: "Distributions",     icon: ArrowRightLeft,  href: "/distributions" },
-      ],
-    },
-    {
-      label: "PEOPLE",
-      items: [
-        { label: "Employees",         icon: Users,           href: "/employees" },
-      ],
-    },
-    {
-      label: "OPERATIONS",
-      items: [
-        { label: "Audit Log",         icon: FileText,        href: "/audit-log" },
-      ],
-    },
-  ];
-
-  // ── Admin (System Administrator) ─────────────────────────────────
-  const adminSections: NavSection[] = [
-    {
-      label: "WORKSPACE",
-      items: [
-        { label: "Dashboard",         icon: LayoutDashboard, href: "/dashboard" },
-      ],
-    },
-    {
-      label: "APPROVALS",
-      items: [
-        { label: "Approval Workbench",icon: CheckSquare,     href: "/approvals",      badge: pendingApprovals },
-        { label: "Anomalies",         icon: AlertTriangle,   href: "/anomalies",      badge: criticalAnomalies },
-      ],
-    },
-    {
-      label: "INVENTORY",
-      items: [
-        { label: "Stock Master",      icon: Package,         href: "/stocks" },
-        { label: "Stock Ledger",      icon: BookOpen,        href: "/ledger" },
-        { label: "Distributions",     icon: ArrowRightLeft,  href: "/distributions" },
-        { label: "Asset Registry",    icon: Tag,             href: "/assets" },
-        { label: "Reconciliation",    icon: RefreshCw,       href: "/reconciliation" },
-      ],
-    },
-    {
-      label: "PEOPLE",
-      items: [
-        { label: "Employees",         icon: Users,           href: "/employees" },
-        { label: "Asset Requests",    icon: ClipboardList,   href: "/manage-requests", badge: pendingApprovals },
-      ],
-    },
-    {
-      label: "ANALYTICS",
-      items: [
-        { label: "AI Insights",       icon: Brain,           href: "/insights" },
-        { label: "Reports",           icon: BarChart3,       href: "/reports" },
-      ],
-    },
-    {
-      label: "AUTOMATION",
-      items: [
-        { label: "AI Policy Center",  icon: Zap,             href: "/admin?tab=policy" },
-        { label: "Workflow Rules",    icon: GitBranch,       href: "/admin?tab=workflow" },
-        { label: "Monitoring",        icon: Activity,        href: "/admin?tab=monitoring" },
-      ],
-    },
-    {
-      label: "DATA MANAGEMENT",
-      items: [
-        { label: "Catalog Admin",     icon: Database,        href: "/admin?tab=catalog" },
-        { label: "User Management",   icon: Users,           href: "/admin?tab=users" },
-        { label: "Bulk Upload",       icon: Upload,          href: "/upload" },
-      ],
-    },
-    {
-      label: "COMPLIANCE",
-      items: [
-        { label: "Audit Log",         icon: FileText,        href: "/audit-log" },
-        { label: "Legal Holds",       icon: Lock,            href: "/legal-holds" },
-        { label: "Administration",    icon: Settings,        href: "/admin" },
-      ],
-    },
-  ];
-
-  // ── Auditor (Read-Only Compliance) ────────────────────────────────
-  const auditorSections: NavSection[] = [
-    {
-      label: "AUDIT & COMPLIANCE",
-      items: [
-        { label: "Transactions",      icon: ArrowRightLeft,  href: "/distributions" },
-        { label: "Approval Records",  icon: CheckSquare,     href: "/approvals" },
-        { label: "AI Decision Log",   icon: Brain,           href: "/insights" },
-        { label: "Stock Ledger",      icon: BookOpen,        href: "/ledger" },
-        { label: "Legal Holds",       icon: Lock,            href: "/legal-holds" },
-        { label: "Audit Trail",       icon: ShieldCheck,     href: "/audit-log" },
-      ],
-    },
-    {
-      label: "REPORTS",
-      items: [
-        { label: "All Reports",       icon: BarChart3,       href: "/reports" },
-        { label: "Exception Analysis",icon: Scale,           href: "/reports?type=exceptions" },
-      ],
-    },
-    {
-      label: "MASTER DATA",
-      items: [
-        { label: "Stock Master",      icon: Package,         href: "/stocks" },
-        { label: "Asset Registry",    icon: Boxes,           href: "/assets" },
-        { label: "Employees",         icon: Users,           href: "/employees" },
-      ],
-    },
-  ];
-
-  function getSections(): NavSection[] {
-    if (userRole === "admin")                return adminSections;
-    if (userRole === "management_authority") return l2Sections;
-    if (userRole === "manager")              return managerSections;
-    if (userRole === "executive")            return executiveSections;
-    if (userRole === "auditor")              return auditorSections;
-    return employeeSections; // "user"
-  }
-
-  const sections = getSections();
+  const sections = getRoleNav(userRole)
+    .map((section) => ({
+      label: section.label,
+      items: section.items
+        .filter((item) => !hiddenForRole.includes(item.href))
+        .map((item) => ({
+          label: item.label,
+          icon: item.icon,
+          href: item.href,
+          badge: item.badgeKey ? badges[item.badgeKey] : undefined,
+        })),
+    }))
+    .filter((section) => section.items.length > 0);
 
   const initials = user?.name
     ? user.name
@@ -346,98 +94,93 @@ export function AppLayout() {
   const Sidebar = () => (
     <div className="flex h-full flex-col">
       {/* Logo */}
-      <div className="flex items-center justify-between border-b border-[hsl(var(--border))] px-5 py-4">
-        <div>
+      <div className="flex items-center gap-3 border-b border-[hsl(var(--border))] px-5 py-4">
+        <div
+          className="flex h-9 w-9 items-center justify-center rounded-lg"
+          style={{
+            background: "hsl(var(--primary))",
+            boxShadow: "0 4px 12px -4px hsl(var(--primary) / 0.5)",
+          }}
+        >
+          <svg width="20" height="20" viewBox="0 0 32 32" fill="none" aria-hidden>
+            <path
+              d="M9 22V10l7 8 7-8v12"
+              stroke="hsl(var(--primary-foreground))"
+              strokeWidth="2.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+        <div className="min-w-0 flex-1">
           <div
-            style={{ letterSpacing: "0.2em", fontSize: "14px", fontWeight: 800, lineHeight: 1 }}
+            style={{ letterSpacing: "0.14em", fontSize: "13px", fontWeight: 700, lineHeight: 1 }}
             className="text-[hsl(var(--foreground))]"
           >
-            MVX
+            MAVERICKS
           </div>
           <div
             style={{ letterSpacing: "0.16em", fontSize: "9px", marginTop: "4px" }}
-            className="text-[hsl(var(--muted-foreground))]/60 uppercase"
+            className="text-[hsl(var(--muted-foreground))]/70 uppercase font-semibold"
           >
             Asset Intelligence
           </div>
-        </div>
-        <div className="flex flex-col gap-[3px]" aria-hidden>
-          {(["#93a3b1", "#7c898b", "#636564"] as const).map((c) => (
-            <div key={c} style={{ width: "16px", height: "2px", background: c }} />
-          ))}
         </div>
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-4">
-        {sections.map((section, sectionIdx) => {
-          // Compute a base delay for animation staggering
-          const baseDelay = sections
-            .slice(0, sectionIdx)
-            .reduce((acc, s) => acc + s.items.length, 0);
-
-          return (
-            <div key={section.label} className={sectionIdx > 0 ? "mt-4" : undefined}>
-              <div className="mb-1.5 px-3">
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-[hsl(var(--muted-foreground))]/60">
-                  {section.label}
-                </span>
-              </div>
-              <ul className="space-y-0.5">
-                {section.items.map((item, itemIdx) => {
-                  const isActive =
-                    location.pathname === item.href ||
-                    (item.href !== "/dashboard" &&
-                      location.pathname.startsWith(item.href));
-                  return (
-                    <motion.li
-                      key={item.href}
-                      initial={{ opacity: 0, x: -12 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{
-                        delay: (baseDelay + itemIdx) * 0.04,
-                        duration: 0.3,
-                        ease: [0.22, 1, 0.36, 1],
-                      }}
-                    >
-                      <Link
-                        to={item.href}
-                        onClick={() => setSidebarOpen(false)}
-                        className={cn(
-                          "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
-                          isActive
-                            ? "bg-[hsl(var(--primary))]/15 text-[hsl(var(--primary))]"
-                            : "text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--secondary))] hover:text-[hsl(var(--foreground))]"
-                        )}
-                      >
-                        <item.icon
-                          className={cn(
-                            "h-4 w-4 shrink-0",
-                            isActive && "text-[hsl(var(--primary))]"
-                          )}
-                        />
-                        <span className="flex-1">{item.label}</span>
-                        {item.badge !== undefined && item.badge > 0 && (
-                          <motion.span
-                            key={item.badge}
-                            initial={{ scale: 0.6, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white"
-                          >
-                            {item.badge > 99 ? "99+" : item.badge}
-                          </motion.span>
-                        )}
-                        {isActive && (
-                          <ChevronRight className="h-3 w-3 text-[hsl(var(--primary))]" />
-                        )}
-                      </Link>
-                    </motion.li>
-                  );
-                })}
-              </ul>
+        {sections.map((section, sectionIdx) => (
+          <div key={section.label} className={sectionIdx > 0 ? "mt-4" : undefined}>
+            <div className="mb-1.5 px-3">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-[hsl(var(--muted-foreground))]/60">
+                {section.label}
+              </span>
             </div>
-          );
-        })}
+            <ul className="space-y-0.5">
+              {section.items.map((item) => {
+                const hrefPath = item.href.split("?")[0];
+                const hrefQuery = item.href.includes("?") ? item.href.split("?")[1] : "";
+                const isActive = item.href.includes("?")
+                  ? location.pathname === hrefPath && location.search === "?" + hrefQuery
+                  : location.pathname === hrefPath ||
+                    (hrefPath !== "/dashboard" && location.pathname.startsWith(hrefPath));
+                return (
+                  <li key={item.href}>
+                    <Link
+                      to={item.href}
+                      onClick={() => setSidebarOpen(false)}
+                      className={cn(
+                        "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors duration-150",
+                        isActive
+                          ? "bg-[hsl(var(--primary))]/12 text-[hsl(var(--primary))]"
+                          : "text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--secondary))] hover:text-[hsl(var(--foreground))]"
+                      )}
+                    >
+                      {isActive && (
+                        <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-[hsl(var(--primary))]" />
+                      )}
+                      <item.icon
+                        className={cn(
+                          "h-4 w-4 shrink-0 transition-colors",
+                          isActive
+                            ? "text-[hsl(var(--primary))]"
+                            : "text-[hsl(var(--muted-foreground))]/80 group-hover:text-[hsl(var(--foreground))]"
+                        )}
+                      />
+                      <span className="flex-1 truncate">{item.label}</span>
+                      {item.badge !== undefined && item.badge > 0 && (
+                        <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[hsl(var(--destructive))] px-1.5 text-[10px] font-bold text-white shadow-[0_2px_6px_-2px_hsl(var(--destructive)_/_0.6)]">
+                          {item.badge > 99 ? "99+" : item.badge}
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
       </nav>
 
       {/* User info card */}
@@ -487,7 +230,7 @@ export function AppLayout() {
   return (
     <div className="flex h-screen overflow-hidden bg-[hsl(var(--background))]">
       {/* Desktop sidebar */}
-      <aside className="hidden w-64 shrink-0 border-r border-[hsl(var(--border))] bg-[hsl(var(--card))] lg:block">
+      <aside className="hidden w-64 shrink-0 border-r border-[hsl(var(--border))] bg-[hsl(var(--card))]/40 backdrop-blur-sm lg:block">
         <Sidebar />
       </aside>
 
@@ -517,7 +260,7 @@ export function AppLayout() {
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top header */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-[hsl(var(--border))] bg-[hsl(var(--background))] px-4">
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-[hsl(var(--border))] bg-[hsl(var(--background))]/85 backdrop-blur-md px-4 sticky top-0 z-30">
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
@@ -623,7 +366,18 @@ export function AppLayout() {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="relative flex-1 overflow-y-auto p-6">
+          {/* Ambient backdrop — mirrors the login glow, but very subtle */}
+          <div
+            aria-hidden
+            className="pointer-events-none fixed inset-0 -z-10"
+            style={{
+              background: `
+                radial-gradient(900px 600px at 88% -10%, hsl(var(--primary) / 0.06), transparent 60%),
+                radial-gradient(700px 500px at -10% 110%, hsl(var(--info) / 0.05), transparent 65%)
+              `,
+            }}
+          />
           <Outlet />
         </main>
       </div>

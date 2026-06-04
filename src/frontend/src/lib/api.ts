@@ -347,6 +347,22 @@ export interface ReconciliationItem {
   counted_by: string | null;
 }
 
+// ─── Config (categories / locations / UOM) ────────────────────────────────────
+export const configApi = {
+  getCategories: () => api.get<{ items: string[] }>("/config/categories"),
+  getLocations: () => api.get<{ items: Array<{ name: string; type: string }> }>("/config/locations"),
+  getUOM: () => api.get<{ items: string[] }>("/config/uom"),
+  addCategory: (name: string) => api.post<{ items: string[] }>("/config/categories", { name }),
+  deleteCategory: (name: string) => api.delete<{ items: string[] }>(`/config/categories/${encodeURIComponent(name)}`),
+  addLocation: (name: string, location_type = "warehouse") => api.post<{ items: Array<{ name: string; type: string }> }>("/config/locations", { name, location_type }),
+  deleteLocation: (name: string) => api.delete<{ items: Array<{ name: string; type: string }> }>(`/config/locations/${encodeURIComponent(name)}`),
+  addUOM: (name: string, abbreviation?: string) => api.post<{ items: string[] }>("/config/uom", { name, abbreviation }),
+  deleteUOM: (name: string) => api.delete<{ items: string[] }>(`/config/uom/${encodeURIComponent(name)}`),
+  getNavVisibility: () => api.get<{ items: Record<string, string[]> }>("/config/nav-visibility"),
+  updateNavVisibility: (role: string, hidden: string[]) =>
+    api.put<{ items: Record<string, string[]> }>("/config/nav-visibility", { role, hidden }),
+};
+
 // ─── Legal Holds ──────────────────────────────────────────────────────────────
 export const legalHoldsApi = {
   list: (params?: { status?: string; search?: string }) =>
@@ -376,3 +392,14 @@ export interface LegalHoldItem {
   released_at: string | null;
   released_by: string | null;
 }
+
+// ─── Audit Mobile Sessions ────────────────────────────────────────────────────
+export const auditSessionApi = {
+  createSession: (asset_id: string) =>
+    api.post<{ token: string; expires_at: string }>("/asset-audit/sessions", { asset_id }),
+  pollStatus: (token: string) =>
+    api.get<{ status: "waiting" | "received"; photo_data_url?: string }>(`/asset-audit/sessions/${token}`),
+  // Public upload — no auth interceptor needed; uses raw fetch on mobile page
+};
+
+export const API_BASE = API_BASE_URL;

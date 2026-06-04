@@ -25,8 +25,13 @@ import {
   useCreateStock,
   useUpdateStock,
   useDeleteStock,
+  useGetLedger,
+  useCategories,
+  useLocations,
+  useUOM,
 } from "@/hooks/use-queries";
 import { toast } from "@/hooks/use-toast";
+import { fuzzyFilter } from "@/lib/fuzzy";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -57,7 +62,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { HealthBadge } from "@/components/health-badge";
 import { cn, formatRelativeTime } from "@/lib/utils";
-import { STOCK_CATEGORIES, UNITS_OF_MEASURE, LOCATIONS } from "@/lib/constants";
 import type { Stock, CreateStockRequest } from "@/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -67,53 +71,22 @@ type Criticality = "standard" | "high" | "critical";
 
 interface EnrichedStock extends Stock {
   lifecycle_status: LifecycleStatus;
-  opening_qty: number;
-  in_qty: number;
-  out_qty: number;
-  reserved_qty: number;
   criticality: Criticality;
-  version: number;
-  activation_requested: boolean;
-}
-
-interface VersionEntry {
-  version: number;
-  isCurrent: boolean;
-  author: string;
-  date: string;
-  note: string;
-  changes: { field: string; before: string; after: string }[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function enrichStock(stock: Stock): EnrichedStock {
-  const numericId = parseInt(stock.id, 10) || stock.id.charCodeAt(0);
-  const idNum = isNaN(numericId) ? stock.id.charCodeAt(0) : numericId;
+  const lifecycle_status: LifecycleStatus =
+    stock.status === "active" ? "active" :
+    stock.status === "inactive" ? "inactive" : "draft";
 
-  let lifecycle_status: LifecycleStatus;
-  if (stock.status === "active") {
-    lifecycle_status = "active";
-  } else if (stock.status === "inactive") {
-    lifecycle_status = "inactive";
-  } else {
-    lifecycle_status = "draft";
-  }
+  // Derive criticality from real health_score data
+  const criticality: Criticality =
+    stock.health_score >= 70 ? "standard" :
+    stock.health_score >= 40 ? "high" : "critical";
 
-  const critMap: Criticality[] = ["standard", "high", "critical"];
-  const criticality: Criticality = critMap[idNum % 3];
-
-  return {
-    ...stock,
-    lifecycle_status,
-    opening_qty: stock.available_qty,
-    in_qty: Math.floor(idNum * 1.7),
-    out_qty: Math.floor(idNum * 1.3),
-    reserved_qty: Math.floor(idNum * 0.4),
-    criticality,
-    version: 1 + (idNum % 4),
-    activation_requested: idNum % 5 === 0,
-  };
+  return { ...stock, lifecycle_status, criticality };
 }
 
 function generateStockCode(): string {
@@ -122,56 +95,14 @@ function generateStockCode(): string {
   return `${prefix}${rand}`;
 }
 
-function getMockVersionHistory(stock: EnrichedStock): VersionEntry[] {
-  const entries: VersionEntry[] = [];
-  for (let v = stock.version; v >= 1; v--) {
-    if (v === stock.version) {
-      entries.push({
-        version: v,
-        isCurrent: true,
-        author: "Admin",
-        date: "2026-05-20",
-        note: "Updated UOM from Pieces to Units",
-        changes: [
-          { field: "UOM", before: "Pieces", after: "Units" },
-          { field: "Location", before: "Warehouse A", after: stock.location },
-        ],
-      });
-    } else if (v === stock.version - 1) {
-      entries.push({
-        version: v,
-        isCurrent: false,
-        author: "Manager",
-        date: "2026-04-10",
-        note: "Updated Minimum Level",
-        changes: [
-          { field: "Min Level", before: String(stock.min_level - 5), after: String(stock.min_level) },
-        ],
-      });
-    } else {
-      entries.push({
-        version: v,
-        isCurrent: false,
-        author: "Admin",
-        date: "2026-01-05",
-        note: "Initial creation",
-        changes: [
-          { field: "Stock Code", before: "—", after: stock.stock_code },
-          { field: "Name", before: "—", after: stock.name },
-        ],
-      });
-    }
-  }
-  return entries;
-}
 
 // ─── Badge sub-components ─────────────────────────────────────────────────────
 
 function CriticalityBadge({ criticality }: { criticality: Criticality }) {
   const cfg = {
-    standard: "bg-slate-500/20 text-slate-300 border-slate-500/30",
-    high: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-    critical: "bg-red-500/20 text-red-400 border-red-500/30",
+    standard: "bg-[hsl(var(--muted))]/40 text-[hsl(var(--muted-foreground))] border-[hsl(var(--border))]",
+    high: "bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))] border-[hsl(var(--warning))]/30",
+    critical: "bg-[hsl(var(--destructive))]/15 text-[hsl(var(--destructive))] border-[hsl(var(--destructive))]/30",
   };
   return (
     <span
@@ -186,13 +117,6 @@ function CriticalityBadge({ criticality }: { criticality: Criticality }) {
   );
 }
 
-function VersionBadge({ version }: { version: number }) {
-  return (
-    <span className="inline-flex items-center rounded border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-mono text-indigo-400">
-      v{version}
-    </span>
-  );
-}
 
 // ─── Quantities Mini-view ─────────────────────────────────────────────────────
 
@@ -203,7 +127,7 @@ function QuantitiesMini({
   stock: EnrichedStock;
   onClick: (s: EnrichedStock) => void;
 }) {
-  const total = stock.opening_qty + stock.in_qty;
+  const total = stock.total_qty;
   const pctAvail = total > 0 ? Math.min((stock.available_qty / total) * 100, 100) : 0;
   const pctReserved = total > 0 ? Math.min((stock.reserved_qty / total) * 100, 100) : 0;
 
@@ -223,7 +147,7 @@ function QuantitiesMini({
           Rsv: <span className="font-medium text-amber-400">{stock.reserved_qty.toLocaleString()}</span>
         </span>
       </div>
-      <div className="flex h-1.5 w-28 overflow-hidden rounded-full bg-slate-700">
+      <div className="flex h-1.5 w-28 overflow-hidden rounded-full bg-[hsl(var(--secondary))]">
         <div
           className="h-full bg-emerald-500 transition-all"
           style={{ width: `${pctAvail}%` }}
@@ -248,18 +172,14 @@ function QuantitiesDetailModal({
 }) {
   if (!stock) return null;
 
-  const calculated_available =
-    stock.opening_qty + stock.in_qty - stock.out_qty - stock.reserved_qty;
-  const total = stock.opening_qty + stock.in_qty;
-  const pctIn = total > 0 ? (stock.in_qty / total) * 100 : 0;
-  const pctOut = total > 0 ? (stock.out_qty / total) * 100 : 0;
-  const pctRsv = total > 0 ? (stock.reserved_qty / total) * 100 : 0;
-  const pctAvail = total > 0 ? Math.max((calculated_available / total) * 100, 0) : 0;
+  const total = stock.total_qty;
+  const pctAvail = total > 0 ? Math.min((stock.available_qty / total) * 100, 100) : 0;
+  const pctDist = total > 0 ? Math.min((stock.distributed_qty / total) * 100, 100) : 0;
+  const pctRsv = total > 0 ? Math.min((stock.reserved_qty / total) * 100, 100) : 0;
 
   const rows = [
-    { label: "Opening Balance", value: stock.opening_qty, color: "text-slate-300" },
-    { label: "Total IN Movements", value: stock.in_qty, color: "text-emerald-400" },
-    { label: "Total OUT Movements", value: stock.out_qty, color: "text-rose-400" },
+    { label: "Opening / Total Balance", value: stock.total_qty, color: "text-[hsl(var(--foreground))]" },
+    { label: "Distributed (out)", value: stock.distributed_qty, color: "text-rose-400" },
     { label: "Reserved (pending approvals)", value: stock.reserved_qty, color: "text-amber-400" },
   ];
 
@@ -289,41 +209,36 @@ function QuantitiesDetailModal({
                   Available Balance
                 </td>
                 <td className="rounded-r py-2.5 pr-2 text-right text-base font-bold text-emerald-400 tabular-nums">
-                  {Math.max(calculated_available, 0).toLocaleString()}
+                  {stock.available_qty.toLocaleString()}
                 </td>
               </tr>
             </tbody>
           </table>
 
-          {/* Mini timeline bar */}
+          {/* Stock composition bar */}
           <div className="space-y-1.5">
-            <p className="text-xs text-[hsl(var(--muted-foreground))]">Stock flow visualisation</p>
-            <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-800">
+            <p className="text-xs text-[hsl(var(--muted-foreground))]">Stock composition</p>
+            <div className="flex h-3 w-full overflow-hidden rounded-full bg-[hsl(var(--muted))]">
               <div
                 className="h-full bg-emerald-500"
-                style={{ width: `${pctIn}%` }}
-                title={`IN: ${stock.in_qty}`}
+                style={{ width: `${pctAvail}%` }}
+                title={`Available: ${stock.available_qty}`}
               />
               <div
                 className="h-full bg-rose-500"
-                style={{ width: `${pctOut}%` }}
-                title={`OUT: ${stock.out_qty}`}
+                style={{ width: `${pctDist}%` }}
+                title={`Distributed: ${stock.distributed_qty}`}
               />
               <div
                 className="h-full bg-amber-500"
                 style={{ width: `${pctRsv}%` }}
                 title={`Reserved: ${stock.reserved_qty}`}
               />
-              <div
-                className="h-full bg-slate-600"
-                style={{ width: `${Math.max(100 - pctIn - pctOut - pctRsv, 0)}%` }}
-              />
             </div>
             <div className="flex gap-4 text-[10px] text-[hsl(var(--muted-foreground))]">
-              <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />IN ({pctIn.toFixed(0)}%)</span>
-              <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-rose-500" />OUT ({pctOut.toFixed(0)}%)</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />Avail ({pctAvail.toFixed(0)}%)</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-rose-500" />Dist ({pctDist.toFixed(0)}%)</span>
               <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-amber-500" />Rsv ({pctRsv.toFixed(0)}%)</span>
-              <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-emerald-500/40" />Avail ({pctAvail.toFixed(0)}%)</span>
             </div>
           </div>
         </div>
@@ -336,7 +251,7 @@ function QuantitiesDetailModal({
   );
 }
 
-// ─── Version History Side Panel ───────────────────────────────────────────────
+// ─── Movement History Side Panel ──────────────────────────────────────────────
 
 function VersionHistoryPanel({
   stock,
@@ -345,13 +260,15 @@ function VersionHistoryPanel({
   stock: EnrichedStock | null;
   onClose: () => void;
 }) {
-  const versions = stock ? getMockVersionHistory(stock) : [];
+  const { data: ledgerData, isLoading } = useGetLedger(
+    stock ? { stock_id: stock.id, page_size: 50 } : undefined
+  );
+  const entries = ledgerData?.items ?? [];
 
   return (
     <AnimatePresence>
       {stock && (
         <>
-          {/* Backdrop */}
           <motion.div
             key="backdrop"
             initial={{ opacity: 0 }}
@@ -360,7 +277,6 @@ function VersionHistoryPanel({
             className="fixed inset-0 z-40 bg-black/50"
             onClick={onClose}
           />
-          {/* Panel */}
           <motion.div
             key="panel"
             initial={{ x: "100%" }}
@@ -371,7 +287,7 @@ function VersionHistoryPanel({
           >
             <div className="flex items-center justify-between border-b border-[hsl(var(--border))] px-5 py-4">
               <div>
-                <p className="font-semibold text-[hsl(var(--foreground))]">Version History</p>
+                <p className="font-semibold text-[hsl(var(--foreground))]">Movement History</p>
                 <p className="text-xs text-[hsl(var(--muted-foreground))]">{stock.stock_code} — {stock.name}</p>
               </div>
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
@@ -379,58 +295,60 @@ function VersionHistoryPanel({
               </Button>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-              {versions.map((v) => (
-                <div key={v.version} className="relative pl-5">
-                  {/* Timeline dot */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+              {isLoading && (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-[hsl(var(--muted-foreground))]" />
+                </div>
+              )}
+              {!isLoading && entries.length === 0 && (
+                <p className="text-center text-sm text-[hsl(var(--muted-foreground))] py-8">No movement records found</p>
+              )}
+              {entries.map((entry, i) => (
+                <div key={entry.id} className="relative pl-5">
                   <div
                     className={cn(
                       "absolute left-0 top-1.5 h-3 w-3 rounded-full border-2",
-                      v.isCurrent
+                      i === 0
                         ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]"
-                        : "border-slate-600 bg-slate-800"
+                        : entry.transaction_type === "in"
+                        ? "border-emerald-500 bg-emerald-800"
+                        : entry.transaction_type === "out"
+                        ? "border-rose-500 bg-rose-800"
+                        : "border-amber-500 bg-amber-800"
                     )}
                   />
-                  {/* Line */}
-                  <div className="absolute left-[5px] top-4 h-full w-px bg-slate-700" />
-
-                  <div className={cn(
-                    "rounded-lg border p-3",
-                    v.isCurrent
-                      ? "border-[hsl(var(--primary)/0.3)] bg-[hsl(var(--primary)/0.05)]"
-                      : "border-[hsl(var(--border))] bg-[hsl(var(--background))]"
-                  )}>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <VersionBadge version={v.version} />
-                        {v.isCurrent && (
-                          <span className="text-[10px] font-semibold uppercase tracking-wide text-[hsl(var(--primary))]">Current</span>
-                        )}
-                      </div>
-                      <span className="text-[11px] text-[hsl(var(--muted-foreground))]">{v.date}</span>
+                  {i < entries.length - 1 && (
+                    <div className="absolute left-[5px] top-4 h-full w-px bg-[hsl(var(--border))]" />
+                  )}
+                  <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={cn(
+                        "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                        entry.transaction_type === "in"
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                          : entry.transaction_type === "out"
+                          ? "border-rose-500/30 bg-rose-500/10 text-rose-400"
+                          : "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                      )}>
+                        {entry.transaction_type}
+                      </span>
+                      <span className="text-[11px] text-[hsl(var(--muted-foreground))]">
+                        {new Date(entry.created_at).toLocaleDateString()}
+                      </span>
                     </div>
-                    <p className="text-sm font-medium text-[hsl(var(--foreground))] mb-1">{v.note}</p>
-                    <p className="text-[11px] text-[hsl(var(--muted-foreground))] mb-2">by {v.author}</p>
-
-                    {/* Diff table */}
-                    <table className="w-full text-xs border-collapse">
-                      <thead>
-                        <tr className="text-[hsl(var(--muted-foreground))]">
-                          <th className="text-left py-0.5 pr-2 font-normal w-24">Field</th>
-                          <th className="text-left py-0.5 pr-2 font-normal">Before</th>
-                          <th className="text-left py-0.5 font-normal">After</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {v.changes.map((c) => (
-                          <tr key={c.field} className="border-t border-[hsl(var(--border))]">
-                            <td className="py-1 pr-2 text-[hsl(var(--muted-foreground))]">{c.field}</td>
-                            <td className="py-1 pr-2 text-rose-400 line-through">{c.before}</td>
-                            <td className="py-1 text-emerald-400">{c.after}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className={entry.transaction_type === "in" ? "font-medium text-emerald-400" : "font-medium text-rose-400"}>
+                        {entry.transaction_type === "in" ? "+" : "-"}{Math.abs(entry.qty_change)} {stock.uom}
+                      </span>
+                      <span className="text-[hsl(var(--muted-foreground))] text-xs">
+                        {entry.qty_before} → {entry.qty_after}
+                      </span>
+                    </div>
+                    {entry.remarks && (
+                      <p className="mt-1 text-[11px] text-[hsl(var(--muted-foreground))] line-clamp-2">{entry.remarks}</p>
+                    )}
+                    <p className="mt-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">by {entry.actor_name}</p>
                   </div>
                 </div>
               ))}
@@ -569,7 +487,7 @@ function defaultFormState(editStock?: EnrichedStock | null): StockFormState {
       criticality: editStock.criticality,
       min_level: String(editStock.min_level),
       max_level: String(editStock.max_level),
-      description: "",
+      description: editStock.description ?? "",
     };
   }
   return {
@@ -597,6 +515,12 @@ function StockFormModal({
 }) {
   const createStock = useCreateStock();
   const updateStock = useUpdateStock();
+  const { data: categoriesData } = useCategories();
+  const { data: locationsData } = useLocations();
+  const { data: uomData } = useUOM();
+  const categories = categoriesData ?? [];
+  const locationsList = locationsData ?? [];
+  const uomList = uomData ?? [];
   const [form, setForm] = useState<StockFormState>(() => defaultFormState(editStock));
   const [aiDismissed, setAiDismissed] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof StockFormState, string>>>({});
@@ -646,6 +570,7 @@ function StockFormModal({
       max_level: maxLvl,
       location: form.location,
       status: editStock ? editStock.status : "draft",
+      description: form.description || undefined,
     };
 
     try {
@@ -718,7 +643,7 @@ function StockFormModal({
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {STOCK_CATEGORIES.map((c) => (
+                  {categories.map((c) => (
                     <SelectItem key={c} value={c}>{c}</SelectItem>
                   ))}
                 </SelectContent>
@@ -732,7 +657,7 @@ function StockFormModal({
                   <SelectValue placeholder="Select UOM" />
                 </SelectTrigger>
                 <SelectContent>
-                  {UNITS_OF_MEASURE.map((u) => (
+                  {uomList.map((u) => (
                     <SelectItem key={u} value={u}>{u}</SelectItem>
                   ))}
                 </SelectContent>
@@ -760,7 +685,7 @@ function StockFormModal({
                   <SelectValue placeholder="Select location" />
                 </SelectTrigger>
                 <SelectContent>
-                  {LOCATIONS.map((l) => (
+                  {locationsList.map((l) => (
                     <SelectItem key={l} value={l}>{l}</SelectItem>
                   ))}
                 </SelectContent>
@@ -895,6 +820,11 @@ const EMPTY_MESSAGES: Record<LifecycleStatus, { title: string; subtitle: string 
 export default function StocksPage() {
   const PAGE_SIZE = 20;
 
+  const { data: categoriesData } = useCategories();
+  const { data: uomData } = useUOM();
+  const categories = categoriesData ?? [];
+  const uomList = uomData ?? [];
+
   // Server fetch — get all items for local lifecycle filtering
   const { data, isLoading } = useListStocks({
     page: 1,
@@ -942,14 +872,19 @@ export default function StocksPage() {
 
   // ── Derived per-tab data ──
   const tabStocks = useMemo(() => {
-    return allStocks.filter((s) => {
+    const inTab = allStocks.filter((s) => {
       if (s.lifecycle_status !== activeTab) return false;
-      if (tabSearch && !s.name.toLowerCase().includes(tabSearch.toLowerCase()) && !s.stock_code.toLowerCase().includes(tabSearch.toLowerCase())) return false;
       if (tabCategory && s.category !== tabCategory) return false;
       if (tabCriticality && s.criticality !== tabCriticality) return false;
       if (tabUom && s.uom !== tabUom) return false;
       return true;
     });
+    // Fuzzy + typo-tolerant search across name + code + category
+    return fuzzyFilter(
+      inTab,
+      tabSearch,
+      [(s) => s.name, (s) => s.stock_code, (s) => s.category]
+    );
   }, [allStocks, activeTab, tabSearch, tabCategory, tabCriticality, tabUom]);
 
   const tabCounts: Record<LifecycleStatus, number> = useMemo(() => {
@@ -1045,12 +980,12 @@ export default function StocksPage() {
                 value={tabCategory || "all"}
                 onValueChange={(v) => { setTabCategory(v === "all" ? "" : v); setLocalPage(1); }}
               >
-                <SelectTrigger className="w-40 h-9 text-sm">
+                <SelectTrigger className="w-full sm:w-40 h-9 text-sm">
                   <SelectValue placeholder="Category" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Categories</SelectItem>
-                  {STOCK_CATEGORIES.map((c) => (
+                  {categories.map((c) => (
                     <SelectItem key={c} value={c}>{c}</SelectItem>
                   ))}
                 </SelectContent>
@@ -1060,7 +995,7 @@ export default function StocksPage() {
                 value={tabCriticality || "all"}
                 onValueChange={(v) => { setTabCriticality(v === "all" ? "" : v); setLocalPage(1); }}
               >
-                <SelectTrigger className="w-36 h-9 text-sm">
+                <SelectTrigger className="w-full sm:w-36 h-9 text-sm">
                   <SelectValue placeholder="Criticality" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1075,12 +1010,12 @@ export default function StocksPage() {
                 value={tabUom || "all"}
                 onValueChange={(v) => { setTabUom(v === "all" ? "" : v); setLocalPage(1); }}
               >
-                <SelectTrigger className="w-32 h-9 text-sm">
+                <SelectTrigger className="w-full sm:w-32 h-9 text-sm">
                   <SelectValue placeholder="UOM" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All UOM</SelectItem>
-                  {UNITS_OF_MEASURE.map((u) => (
+                  {uomList.map((u) => (
                     <SelectItem key={u} value={u}>{u}</SelectItem>
                   ))}
                 </SelectContent>
@@ -1138,7 +1073,7 @@ export default function StocksPage() {
                     <TableHead className="font-semibold">UOM</TableHead>
                     <TableHead className="font-semibold">Quantities</TableHead>
                     <TableHead className="font-semibold">Location</TableHead>
-                    <TableHead className="font-semibold text-center">Ver.</TableHead>
+                    <TableHead className="font-semibold text-center">Priority</TableHead>
                     <TableHead className="font-semibold">Health</TableHead>
                     <TableHead className="font-semibold">Modified</TableHead>
                     <TableHead className="font-semibold text-right pr-4">Actions</TableHead>
@@ -1216,9 +1151,9 @@ export default function StocksPage() {
                           {stock.location}
                         </TableCell>
 
-                        {/* Version */}
+                        {/* Criticality (derived from health_score) */}
                         <TableCell className="text-center">
-                          <VersionBadge version={stock.version} />
+                          <CriticalityBadge criticality={stock.criticality} />
                         </TableCell>
 
                         {/* Health */}

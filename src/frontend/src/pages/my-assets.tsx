@@ -406,12 +406,6 @@ function RequestCard({ request }: { request: AssetRequest }) {
           <Calendar className="h-3 w-3" />
           Submitted: {new Date(request.created_at).toLocaleDateString()}
         </span>
-        {request.reviewed_at && (
-          <span className="flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3" />
-            Reviewed: {new Date(request.reviewed_at).toLocaleDateString()}
-          </span>
-        )}
         {request.fulfilled_at && (
           <span className="flex items-center gap-1 text-green-400">
             <Star className="h-3 w-3" />
@@ -542,7 +536,7 @@ export default function MyAssetsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
   // ── Queries ──
-  const { data: assetsData, isLoading: assetsLoading, refetch: refetchAssets } = useQuery({
+  const { data: assetsData, isLoading: assetsLoading, isFetching: assetsFetching, refetch: refetchAssets } = useQuery({
     queryKey: QUERY_KEYS.MY_ASSETS,
     queryFn: () => myAssetsApi.list().then((r) => r.data),
   });
@@ -630,7 +624,7 @@ export default function MyAssetsPage() {
             onClick={() => refetchAssets()}
             className="gap-2"
           >
-            <RefreshCw className="h-3.5 w-3.5" />
+            <RefreshCw className={`h-3.5 w-3.5 transition-transform ${assetsFetching ? "animate-spin" : ""}`} />
             Refresh
           </Button>
           <Button size="sm" onClick={() => navigate("/make-request")} className="gap-2">

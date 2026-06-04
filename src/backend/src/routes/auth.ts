@@ -20,8 +20,8 @@ const loginSchema = z.object({
 });
 
 const changePasswordSchema = z.object({
-  oldPassword: z.string().min(1),
-  newPassword: z.string().min(8),
+  old_password: z.string().min(1),
+  new_password: z.string().min(8),
 });
 
 // ─── POST /auth/login ─────────────────────────────────────────────────────────
@@ -311,7 +311,7 @@ router.post(
         return;
       }
 
-      const { oldPassword, newPassword } = parsed.data;
+      const { old_password: oldPassword, new_password: newPassword } = parsed.data;
 
       const [user] = await db
         .select()
