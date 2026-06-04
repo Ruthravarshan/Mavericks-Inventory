@@ -114,10 +114,10 @@ async function testAuth() {
   console.log(section("AUTH — Login all roles"));
 
   for (const [role, email, password] of [
-    ["admin",   "admin@mavericks.com",   "Admin@123!"],
-    ["exec",    "exec@mavericks.com",    "Exec@123!"],
-    ["manager", "manager@mavericks.com", "Manager@123!"],
-    ["l2",      "l2@mavericks.com",      "L2Auth@123!"],
+    ["admin",   "admin@example.com",   "DemoPass!123"],
+    ["exec",    "exec@example.com",    "DemoPass!123"],
+    ["manager", "manager@example.com", "DemoPass!123"],
+    ["l2",      "l2@example.com",      "DemoPass!123"],
   ]) {
     const r = await POST("/auth/login", { email, password });
     if (assertStatus(`POST /auth/login (${role})`, r, 200)) {
@@ -130,7 +130,7 @@ async function testAuth() {
   // GET /auth/me
   const me = await GET("/auth/me", tokens.admin);
   if (assertStatus("GET /auth/me", me, 200)) {
-    assert("  → me.email = admin@mavericks.com", me.data?.email === "admin@mavericks.com");
+    assert("  → me.email = admin@example.com", me.data?.email === "admin@example.com");
     assert("  → me.role = admin", me.data?.role === "admin");
   }
 
@@ -541,7 +541,7 @@ async function testAdmin() {
   const createUser = await POST("/admin/users", {
     employee_id: `EMP-TEST-${ts}`,
     name: `Test User ${ts}`,
-    email: `testuser.${ts}@mavericks.com`,
+    email: `testuser.${ts}@example.com`,
     role: "executive",
     department: "IT",
     location: "Head Office",

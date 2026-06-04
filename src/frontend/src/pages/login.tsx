@@ -45,11 +45,11 @@ const loginSchema = z.object({
 type LoginForm = z.infer<typeof loginSchema>;
 
 const DEMO = [
-  { role: "IT Employee",  name: "John Developer",       email: "employee@mavericks.com", password: "Employee@123!" },
-  { role: "Executive",    name: "Executive User",       email: "exec@mavericks.com",     password: "Exec@123!"     },
-  { role: "IT Manager",   name: "Inventory Manager",    email: "manager@mavericks.com",  password: "Manager@123!"  },
-  { role: "L2 Authority", name: "Management Authority", email: "l2@mavericks.com",       password: "L2Auth@123!"   },
-  { role: "System Admin", name: "System Administrator", email: "admin@mavericks.com",    password: "Admin@123!"    },
+  { role: "IT Employee",  name: "John Developer",       email: "employee@example.com", password: "DemoPass!123" },
+  { role: "Executive",    name: "Executive User",       email: "exec@example.com",     password: "DemoPass!123" },
+  { role: "IT Manager",   name: "Inventory Manager",    email: "manager@example.com",  password: "DemoPass!123" },
+  { role: "L2 Authority", name: "Management Authority", email: "l2@example.com",       password: "DemoPass!123" },
+  { role: "System Admin", name: "System Administrator", email: "admin@example.com",    password: "DemoPass!123" },
 ];
 
 /* ─── Form field ─────────────────────────────────────────────── */

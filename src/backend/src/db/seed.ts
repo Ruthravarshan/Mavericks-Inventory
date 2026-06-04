@@ -9,19 +9,19 @@ async function seed() {
 
   // ─── Users ─────────────────────────────────────────────────────────────────
 
-  const passwordAdmin = await hashPassword("Admin@123!");
-  const passwordExec = await hashPassword("Exec@123!");
-  const passwordManager = await hashPassword("Manager@123!");
-  const passwordL2 = await hashPassword("L2Auth@123!");
-  const passwordEmployee = await hashPassword("Employee@123!");
-  const passwordEmployee2 = await hashPassword("Employee@123!");
+  const passwordAdmin = await hashPassword("DemoPass!123");
+  const passwordExec = await hashPassword("DemoPass!123");
+  const passwordManager = await hashPassword("DemoPass!123");
+  const passwordL2 = await hashPassword("DemoPass!123");
+  const passwordEmployee = await hashPassword("DemoPass!123");
+  const passwordEmployee2 = await hashPassword("DemoPass!123");
 
   const [admin] = await db
     .insert(users)
     .values({
       employeeId: "EMP-ADMIN-001",
       fullName: "System Administrator",
-      email: "admin@mavericks.com",
+      email: "admin@example.com",
       passwordHash: passwordAdmin,
       role: "admin",
       department: "IT",
@@ -36,7 +36,7 @@ async function seed() {
     .values({
       employeeId: "EMP-EXEC-001",
       fullName: "Executive User",
-      email: "exec@mavericks.com",
+      email: "exec@example.com",
       passwordHash: passwordExec,
       role: "executive",
       department: "Operations",
@@ -51,7 +51,7 @@ async function seed() {
     .values({
       employeeId: "EMP-MGR-001",
       fullName: "Inventory Manager",
-      email: "manager@mavericks.com",
+      email: "manager@example.com",
       passwordHash: passwordManager,
       role: "manager",
       department: "Inventory",
@@ -66,7 +66,7 @@ async function seed() {
     .values({
       employeeId: "EMP-L2-001",
       fullName: "L2 Authority",
-      email: "l2@mavericks.com",
+      email: "l2@example.com",
       passwordHash: passwordL2,
       role: "management_authority",
       department: "Management",
@@ -82,7 +82,7 @@ async function seed() {
     .values({
       employeeId: "EMP-001",
       fullName: "John Developer",
-      email: "employee@mavericks.com",
+      email: "employee@example.com",
       passwordHash: passwordEmployee,
       role: "user",
       department: "Engineering",
@@ -99,7 +99,7 @@ async function seed() {
     .values({
       employeeId: "EMP-002",
       fullName: "Sarah Designer",
-      email: "sarah@mavericks.com",
+      email: "sarah@example.com",
       passwordHash: passwordEmployee2,
       role: "user",
       department: "Design",
@@ -416,11 +416,11 @@ async function seed() {
   logger.info("✓ Database seed complete");
   logger.info("");
   logger.info("Test credentials:");
-  logger.info("  IT Employee: employee@mavericks.com / Employee@123!");
-  logger.info("  IT Manager:  manager@mavericks.com  / Manager@123!");
-  logger.info("  Admin:       admin@mavericks.com    / Admin@123!");
-  logger.info("  Exec:        exec@mavericks.com     / Exec@123!");
-  logger.info("  L2 Auth:     l2@mavericks.com       / L2Auth@123!");
+  logger.info("  IT Employee: employee@example.com / DemoPass!123");
+  logger.info("  IT Manager:  manager@example.com  / DemoPass!123");
+  logger.info("  Admin:       admin@example.com    / DemoPass!123");
+  logger.info("  Exec:        exec@example.com     / DemoPass!123");
+  logger.info("  L2 Auth:     l2@example.com       / DemoPass!123");
 
   process.exit(0);
 }

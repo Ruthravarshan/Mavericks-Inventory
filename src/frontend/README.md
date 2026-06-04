@@ -29,10 +29,10 @@ The login page has **Quick Access** demo buttons that pre-fill the email/passwor
 
 | Role           | Email                    | Password       |
 |----------------|--------------------------|----------------|
-| IT Employee    | employee@mavericks.com   | Employee@123!  |
-| IT Manager     | manager@mavericks.com    | Manager@123!   |
-| System Admin   | admin@mavericks.com      | Admin@123!     |
-| L2 Authority   | l2@mavericks.com         | L2Auth@123!    |
+| IT Employee    | employee@example.com     | DemoPass!123   |
+| IT Manager     | manager@example.com      | DemoPass!123   |
+| System Admin   | admin@example.com        | DemoPass!123   |
+| L2 Authority   | l2@example.com           | DemoPass!123   |
 
 ## Build & Production
 
