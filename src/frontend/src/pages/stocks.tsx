@@ -25,6 +25,8 @@ import {
   useCreateStock,
   useUpdateStock,
   useDeleteStock,
+  useActivateStock,
+  useDeactivateStock,
   useGetLedger,
   useCategories,
   useLocations,
@@ -370,15 +372,18 @@ function RequestActivationDialog({
   onClose: () => void;
 }) {
   const [justification, setJustification] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const activateStock = useActivateStock();
 
   async function handleSubmit() {
-    setIsSubmitting(true);
-    await new Promise((res) => setTimeout(res, 800));
-    setIsSubmitting(false);
-    toast({ title: `Activation requested for ${stock?.name}`, description: "Your request has been submitted for review." });
-    setJustification("");
-    onClose();
+    if (!stock) return;
+    try {
+      await activateStock.mutateAsync(stock.id);
+      toast({ title: `${stock.name} activated`, description: "The item is now live in the Active tab." });
+      setJustification("");
+      onClose();
+    } catch {
+      toast({ title: "Failed to activate stock", variant: "destructive" });
+    }
   }
 
   return (
@@ -405,9 +410,9 @@ function RequestActivationDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Submit Request
+          <Button onClick={handleSubmit} disabled={activateStock.isPending}>
+            {activateStock.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Activate
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -824,11 +829,16 @@ export default function StocksPage() {
   const { data: uomData } = useUOM();
   const categories = categoriesData ?? [];
   const uomList = uomData ?? [];
+  const activateStock = useActivateStock();
+  const deactivateStock = useDeactivateStock();
 
-  // Server fetch — get all items for local lifecycle filtering
+  // Server fetch — get all items for local lifecycle filtering. We pull a large
+  // page so every item is available client-side; the tabs + local pagination
+  // then slice by lifecycle status (otherwise newly activated items beyond the
+  // first page would never appear under their tab).
   const { data, isLoading } = useListStocks({
     page: 1,
-    page_size: PAGE_SIZE,
+    page_size: 500,
   });
 
   const allStocks: EnrichedStock[] = useMemo(
@@ -911,9 +921,20 @@ export default function StocksPage() {
   }
 
   async function handleBulkAction(action: "activate" | "deactivate") {
-    await new Promise((r) => setTimeout(r, 600));
-    const label = action === "activate" ? "activation requested" : "deactivated";
-    toast({ title: `${selected.length} stocks ${label}` });
+    const ids = [...selected];
+    const run = action === "activate" ? activateStock : deactivateStock;
+    let ok = 0;
+    for (const id of ids) {
+      try {
+        await run.mutateAsync(id);
+        ok++;
+      } catch {
+        /* skip rows that can't transition (wrong status) */
+      }
+    }
+    const label = action === "activate" ? "activated" : "deactivated";
+    if (ok > 0) toast({ title: `${ok} stock${ok === 1 ? "" : "s"} ${label}` });
+    else toast({ title: `Could not ${action} the selected stocks`, variant: "destructive" });
     setSelected([]);
   }
 
@@ -1226,12 +1247,17 @@ export default function StocksPage() {
                                   size="icon"
                                   className="h-7 w-7 text-amber-400 hover:text-amber-300"
                                   title="Deactivate"
+                                  disabled={deactivateStock.isPending}
                                   onClick={async () => {
-                                    await new Promise((r) => setTimeout(r, 400));
-                                    toast({ title: `${stock.name} deactivated` });
+                                    try {
+                                      await deactivateStock.mutateAsync(stock.id);
+                                      toast({ title: `${stock.name} deactivated` });
+                                    } catch {
+                                      toast({ title: "Failed to deactivate stock", variant: "destructive" });
+                                    }
                                   }}
                                 >
-                                  <XCircle className="h-3.5 w-3.5" />
+                                  {deactivateStock.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
                                 </Button>
                                 <Button
                                   variant="ghost"
@@ -1261,12 +1287,17 @@ export default function StocksPage() {
                                   size="icon"
                                   className="h-7 w-7 text-emerald-400 hover:text-emerald-300"
                                   title="Reactivate"
+                                  disabled={activateStock.isPending}
                                   onClick={async () => {
-                                    await new Promise((r) => setTimeout(r, 400));
-                                    toast({ title: `${stock.name} reactivated` });
+                                    try {
+                                      await activateStock.mutateAsync(stock.id);
+                                      toast({ title: `${stock.name} reactivated` });
+                                    } catch {
+                                      toast({ title: "Failed to reactivate stock", variant: "destructive" });
+                                    }
                                   }}
                                 >
-                                  <RefreshCw className="h-3.5 w-3.5" />
+                                  {activateStock.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                                 </Button>
                                 <Button
                                   variant="ghost"

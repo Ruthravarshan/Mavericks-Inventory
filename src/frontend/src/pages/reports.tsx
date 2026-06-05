@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { FileSpreadsheet, FileText, BarChart3, Search, Loader2 } from "lucide-react";
 import { useGetReport } from "@/hooks/use-queries";
-import { reportsApi } from "@/lib/api";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,8 +119,8 @@ const REPORTS: ReportDef[] = [
   },
   {
     id: "user-activity",
-    label: "User Activity Log",
-    description: "System activity by user",
+    label: "User Activity Summary",
+    description: "Per-user activity totals — events, distributions, approvals & last active",
     adminOnly: true,
     filters: [
       { key: "date_from", label: "From Date", type: "date" },
@@ -149,15 +148,63 @@ export default function ReportsPage() {
     setActiveFilters({ ...filterValues });
   }
 
-  async function handleExport(format: "excel" | "pdf") {
+  // Build the report table as HTML from the data already loaded in memory.
+  function buildTableHtml(): string {
+    const cols = reportData?.columns ?? [];
+    const rows = reportData?.rows ?? [];
+    const esc = (v: unknown) =>
+      String(v ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    const head = cols.map((c) => `<th>${esc(c.label)}</th>`).join("");
+    const body = rows
+      .map((r) => `<tr>${cols.map((c) => `<td>${esc(r[c.key])}</td>`).join("")}</tr>`)
+      .join("");
+    return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  // Client-side export — no backend round-trip. Excel via an .xls HTML workbook
+  // (opens natively in Excel); PDF via a print window the user saves as PDF.
+  function handleExport(format: "excel" | "pdf") {
+    if (!reportData || reportData.rows.length === 0) {
+      toast({ title: "Nothing to export", description: "Run a report with results first." });
+      return;
+    }
     setIsExporting(format);
     try {
-      const params = Object.fromEntries(Object.entries(activeFilters).filter(([, v]) => v));
-      const res =
-        format === "excel"
-          ? await reportsApi.exportExcel(selectedReport.id, params)
-          : await reportsApi.exportPdf(selectedReport.id, params);
-      downloadBlob(res.data as Blob, `${selectedReport.id}-report.${format === "excel" ? "xlsx" : "pdf"}`);
+      const title = selectedReport.label;
+      const stamp = new Date().toISOString().slice(0, 10);
+      const meta = `${reportData.rows.length} rows · Generated ${new Date().toLocaleString()}`;
+
+      if (format === "excel") {
+        const html =
+          `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">` +
+          `<head><meta charset="utf-8"><style>table{border-collapse:collapse}th,td{border:1px solid #ccc;padding:4px 8px}th{background:#f3f4f6}</style></head>` +
+          `<body><h3>${title}</h3>${buildTableHtml()}</body></html>`;
+        const blob = new Blob(["﻿", html], { type: "application/vnd.ms-excel" });
+        downloadBlob(blob, `${selectedReport.id}-${stamp}.xls`);
+      } else {
+        const win = window.open("", "_blank");
+        if (!win) {
+          toast({
+            title: "Pop-up blocked",
+            description: "Allow pop-ups for this site to export as PDF.",
+            variant: "destructive",
+          });
+          return;
+        }
+        win.document.write(
+          `<html><head><title>${title}</title><style>` +
+            `body{font-family:Inter,system-ui,sans-serif;padding:24px;color:#111}` +
+            `h2{margin:0 0 4px}.meta{color:#666;font-size:12px;margin-bottom:16px}` +
+            `table{border-collapse:collapse;width:100%;font-size:12px}` +
+            `th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}th{background:#f3f4f6}` +
+            `</style></head><body><h2>${title}</h2><div class="meta">${meta}</div>${buildTableHtml()}` +
+            `<script>window.onload=function(){window.focus();window.print();}</script></body></html>`
+        );
+        win.document.close();
+      }
     } catch {
       toast({ title: "Export failed", variant: "destructive" });
     } finally {

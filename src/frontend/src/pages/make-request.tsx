@@ -63,55 +63,71 @@ const WORKFLOW_CONTACTS = {
 // ─── Client-side AI priority classifier ────────────────────────────────────────
 // Lightweight, offline keyword/intent analysis. Mirrors the app's existing
 // client-side "AI" subcategory feature — no backend round-trip.
-const PRIORITY_SIGNALS: { priority: PriorityValue; weight: number; terms: string[] }[] = [
+const PRIORITY_SIGNALS: { priority: PriorityValue; terms: string[] }[] = [
   {
     priority: "critical",
-    weight: 3,
     terms: [
-      "blocked", "blocker", "cannot work", "can't work", "cant work", "unable to work",
-      "down", "outage", "broken", "not working", "stopped working", "crash", "crashed",
-      "data loss", "security", "breach", "production", "prod issue", "asap", "immediately",
-      "right now", "today", "emergency", "critical",
+      "blocked", "blocker", "blocking", "cannot work", "can't work", "cant work",
+      "can not work", "unable to work", "not able to work", "stuck", "halted",
+      "down", "outage", "offline", "broken", "not working", "doesn't work",
+      "does not work", "stopped working", "won't turn on", "wont turn on", "dead",
+      "crash", "crashed", "crashing", "blue screen", "bsod", "data loss", "lost data",
+      "security", "breach", "hacked", "malware", "virus", "ransomware", "compromised",
+      "production", "prod", "p1", "sev1", "severity 1", "asap", "immediately",
+      "right away", "right now", "emergency", "critical", "show stopper",
+      "showstopper", "unusable", "completely broken", "no longer works",
     ],
   },
   {
     priority: "urgent",
-    weight: 2,
     terms: [
-      "urgent", "soon", "this week", "by friday", "by monday", "deadline", "client",
-      "customer", "presentation", "demo", "travel", "trip", "onboarding", "new joiner",
-      "new hire", "joining", "replacement", "replace", "failing", "slow", "lagging",
-      "tomorrow", "few days", "couple of days",
+      "urgent", "urgently", "soon", "quickly", "this week", "by friday", "by monday",
+      "by eod", "by tomorrow", "end of day", "deadline", "due", "time sensitive",
+      "time-sensitive", "expedite", "expedited", "priority", "important", "client",
+      "customer", "stakeholder", "presentation", "present", "demo", "pitch", "meeting",
+      "travel", "traveling", "travelling", "trip", "flight", "onsite", "on-site",
+      "onboarding", "onboard", "new joiner", "new hire", "new employee", "joining",
+      "starts monday", "starts next week", "replacement", "replace", "failing",
+      "slow", "sluggish", "lagging", "freezing", "overheating", "battery dying",
+      "tomorrow", "few days", "couple of days", "a few days", "next week",
     ],
   },
   {
     priority: "low",
-    weight: 1,
     terms: [
-      "whenever", "no rush", "not urgent", "nice to have", "eventually", "future",
-      "backup", "spare", "optional", "when possible", "low priority", "someday",
-      "down the line", "if available",
+      "whenever", "no rush", "no hurry", "not urgent", "not in a hurry", "nice to have",
+      "nice-to-have", "eventually", "future", "backup", "spare", "extra", "optional",
+      "when possible", "when you can", "when convenient", "low priority", "someday",
+      "down the line", "if available", "take your time", "would be nice", "at some point",
+      "no deadline", "not time sensitive", "not time-sensitive",
     ],
   },
 ];
+
+// Escape a term for safe use inside a RegExp.
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 function suggestPriority(text: string): {
   priority: PriorityValue;
   matched: string[];
   reason: string;
 } {
-  const lower = ` ${text.toLowerCase()} `;
+  const lower = text.toLowerCase();
   const matchedBy: Record<PriorityValue, string[]> = {
     critical: [], urgent: [], normal: [], low: [],
   };
   for (const sig of PRIORITY_SIGNALS) {
     for (const term of sig.terms) {
-      if (lower.includes(` ${term} `) || lower.includes(`${term}`)) {
-        if (lower.includes(term)) matchedBy[sig.priority].push(term);
-      }
+      // Whole-word match — avoids false positives like "down" inside "download"
+      // or "prod" inside "productivity". Suffix forms (urgently, crashing, …)
+      // are listed explicitly in PRIORITY_SIGNALS above.
+      const re = new RegExp(`\\b${escapeRe(term)}\\b`, "i");
+      if (re.test(lower)) matchedBy[sig.priority].push(term);
     }
   }
-  // Highest-severity signal wins.
+  // Highest-severity signal wins: critical > urgent > low > normal.
   let priority: PriorityValue = "normal";
   let matched: string[] = [];
   if (matchedBy.critical.length) { priority = "critical"; matched = matchedBy.critical; }
@@ -122,7 +138,7 @@ function suggestPriority(text: string): {
     critical: "Your justification signals work is blocked or business-critical, so this should be expedited.",
     urgent: "Your justification mentions a near-term need or deadline, so a few-day turnaround is recommended.",
     low: "Your justification suggests this isn't time-sensitive, so it can be scheduled flexibly.",
-    normal: "No urgency signals detected — a standard review timeline applies.",
+    normal: "No urgency signals detected — a standard review timeline applies. Pick a priority manually if needed.",
   };
 
   return {
@@ -153,6 +169,11 @@ export default function MakeRequestPage() {
   const selectedCategory = watch("category");
   const reasonText = watch("reason") ?? "";
 
+  // ── Priority (dedicated state — single source of truth) ──
+  // Kept outside react-hook-form so the chosen value can never be silently
+  // dropped to the zod default; it is passed explicitly into the payload.
+  const [priority, setPriority] = useState<PriorityValue>("normal");
+
   // ── AI priority suggestion (client-side heuristic) ──
   const [aiSuggestion, setAiSuggestion] = useState<ReturnType<typeof suggestPriority> | null>(null);
   const [aiThinking, setAiThinking] = useState(false);
@@ -170,10 +191,10 @@ export default function MakeRequestPage() {
       setAiSuggestion(s);
       setAiThinking(false);
       // Auto-apply only while the user hasn't manually chosen a priority.
-      if (!priorityTouched) setValue("priority", s.priority);
+      if (!priorityTouched) setPriority(s.priority);
     }, 600);
     return () => clearTimeout(t);
-  }, [reasonText, priorityTouched, setValue]);
+  }, [reasonText, priorityTouched]);
 
   useEffect(() => {
     if (!selectedCategory) {
@@ -251,7 +272,7 @@ export default function MakeRequestPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-5">
+          <form onSubmit={handleSubmit((d) => mutation.mutate({ ...d, priority }))} className="space-y-5">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Category *</Label>
@@ -357,7 +378,7 @@ export default function MakeRequestPage() {
                         <span className="font-semibold text-[hsl(var(--primary))]">
                           {PRIORITY_OPTIONS.find((o) => o.value === aiSuggestion.priority)?.label.split(" — ")[0]}
                         </span>
-                        {watch("priority") === aiSuggestion.priority && (
+                        {priority === aiSuggestion.priority && (
                           <span className="ml-1 inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--primary))]">
                             <CheckCircle2 className="h-2.5 w-2.5" /> applied
                           </span>
@@ -374,10 +395,10 @@ export default function MakeRequestPage() {
                         </div>
                       )}
                     </div>
-                    {watch("priority") !== aiSuggestion.priority && (
+                    {priority !== aiSuggestion.priority && (
                       <button
                         type="button"
-                        onClick={() => { setValue("priority", aiSuggestion.priority); setPriorityTouched(true); }}
+                        onClick={() => { setPriority(aiSuggestion.priority); setPriorityTouched(true); }}
                         className="shrink-0 inline-flex items-center gap-1 rounded-md border border-[hsl(var(--primary))]/40 px-2 py-1 text-[11px] font-medium text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/10 transition-colors"
                       >
                         <Wand2 className="h-3 w-3" />
@@ -394,13 +415,13 @@ export default function MakeRequestPage() {
 
               <div className="grid grid-cols-2 gap-2">
                 {PRIORITY_OPTIONS.map((opt) => {
-                  const selected = watch("priority") === opt.value;
+                  const selected = priority === opt.value;
                   const isAiPick = aiSuggestion?.priority === opt.value;
                   return (
                     <button
                       key={opt.value}
                       type="button"
-                      onClick={() => { setValue("priority", opt.value as FormData["priority"]); setPriorityTouched(true); }}
+                      onClick={() => { setPriority(opt.value as PriorityValue); setPriorityTouched(true); }}
                       className={`relative rounded-lg border px-3 py-2.5 text-left transition-all ${
                         selected
                           ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/10"

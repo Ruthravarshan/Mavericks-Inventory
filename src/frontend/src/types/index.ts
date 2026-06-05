@@ -382,6 +382,7 @@ export interface AssetRequest {
   review_notes: string | null;
   reviewed_at: string | null;
   fulfilled_at: string | null;
+  acknowledged_at: string | null;
   fulfilled_asset_id: string | null;
   created_at: string;
 }

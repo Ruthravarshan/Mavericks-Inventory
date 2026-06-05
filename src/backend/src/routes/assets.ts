@@ -248,7 +248,19 @@ router.post("/:id/assign", requireRole("admin", "manager"), async (req: Request,
       res.status(404).json({ error_code: "NOT_FOUND", message: "Asset not found" });
       return;
     }
-    if (asset.status === "assigned") {
+    if (asset.status === "retired" || asset.status === "lost") {
+      res.status(409).json({ error_code: "NOT_ASSIGNABLE", message: `Asset is ${asset.status} and cannot be assigned` });
+      return;
+    }
+    // Only block when there is a genuine ACTIVE assignment. An asset whose status
+    // is "assigned" but has no active assignment row is an orphan — we allow the
+    // assignment to proceed, which self-heals the inconsistent state.
+    const [existingActive] = await db
+      .select()
+      .from(assetAssignments)
+      .where(and(eq(assetAssignments.assetId, id), eq(assetAssignments.status, "active")))
+      .limit(1);
+    if (existingActive) {
       res.status(409).json({ error_code: "ALREADY_ASSIGNED", message: "Asset is already assigned" });
       return;
     }
@@ -306,6 +318,22 @@ router.post("/:id/return", requireRole("admin", "manager"), async (req: Request,
       .limit(1);
 
     if (!activeAssignment) {
+      // Orphan: status says "assigned" but no active assignment row exists.
+      // Self-heal by resetting the asset back to available instead of erroring.
+      const [asset] = await db.select().from(assets).where(eq(assets.id, id)).limit(1);
+      if (asset && asset.status === "assigned") {
+        await db.update(assets).set({ status: "available", updatedAt: new Date() }).where(eq(assets.id, id));
+        await db.insert(activity).values({
+          eventType: "asset_returned",
+          description: `Asset ${asset.assetTag} reset to available (no active assignment) by ${req.user!.name}`,
+          actor: req.user!.email,
+          entityType: "asset",
+          entityId: id,
+          ipAddress: req.ip,
+        });
+        res.json({ message: "Asset reset to available" });
+        return;
+      }
       res.status(404).json({ error_code: "NOT_FOUND", message: "No active assignment found for this asset" });
       return;
     }

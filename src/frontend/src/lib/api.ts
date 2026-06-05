@@ -120,6 +120,8 @@ export const stocksApi = {
     api.post<import("@/types").Stock>("/stocks", data),
   update: (id: string, data: Partial<import("@/types").CreateStockRequest>) =>
     api.put<import("@/types").Stock>(`/stocks/${id}`, data),
+  activate: (id: string) => api.post<import("@/types").Stock>(`/stocks/${id}/activate`),
+  deactivate: (id: string) => api.post<import("@/types").Stock>(`/stocks/${id}/deactivate`),
   delete: (id: string) => api.delete(`/stocks/${id}`),
   exportCsv: () => api.get("/stocks/export", { responseType: "blob" }),
 };
@@ -285,6 +287,7 @@ export const requestsApi = {
     api.post(`/requests/${id}/reject`, { review_notes: notes }),
   fulfill: (id: string, asset_id: string, validity_date?: string, notes?: string) =>
     api.post(`/requests/${id}/fulfill`, { asset_id, validity_date, notes }),
+  acknowledge: (id: string) => api.post(`/requests/${id}/acknowledge`, {}),
 };
 
 // ─── Asset Audit ──────────────────────────────────────────────────────────────

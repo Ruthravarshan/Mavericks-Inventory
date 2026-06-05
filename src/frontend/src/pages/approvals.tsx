@@ -819,6 +819,7 @@ function StatCard({
 function PendingQueueView() {
   const { isL2 } = useAuth();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
 
   const level: "l1" | "l2" = isL2 ? "l2" : "l1";
   const approvalsQuery = useListApprovals({ level });
@@ -843,13 +844,18 @@ function PendingQueueView() {
     [rawItems]
   );
 
-  // UI state
-  const [search, setSearch] = useState("");
+  // UI state — seed search from the ?q= param (used by dashboard bottleneck links)
+  const [search, setSearch] = useState(searchParams.get("q") ?? "");
   const [riskFilter, setRiskFilter] = useState<"all" | RiskScore>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("oldest");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [detailItem, setDetailItem] = useState<EnrichedApproval | null>(null);
+
+  // Approve dialog state
+  const [approveDialogOpen, setApproveDialogOpen] = useState(false);
+  const [approveTargetId, setApproveTargetId] = useState<string | null>(null);
+  const [approveRemarks, setApproveRemarks] = useState("");
 
   // Reject dialog state
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -967,6 +973,20 @@ function PendingQueueView() {
     },
     [approveMutation, toast, detailItem]
   );
+
+  // Approve dialog — confirmation before committing the approval
+  const openApproveDialog = useCallback((id: string, remarks: string) => {
+    setApproveTargetId(id);
+    setApproveRemarks(remarks ?? "");
+    setApproveDialogOpen(true);
+  }, []);
+
+  const handleApproveConfirm = async () => {
+    if (!approveTargetId) return;
+    await handleApprove(approveTargetId, approveRemarks);
+    setApproveDialogOpen(false);
+    setApproveTargetId(null);
+  };
 
   // Reject dialog
   const openRejectDialog = useCallback((id: string) => {
@@ -1276,7 +1296,7 @@ function PendingQueueView() {
                   selected={selected.has(item.id)}
                   onSelect={toggleSelect}
                   onView={setDetailItem}
-                  onApprove={handleApprove}
+                  onApprove={openApproveDialog}
                   onOpenReject={openRejectDialog}
                   onOpenForward={openForwardDialog}
                   isApproving={approveMutation.isPending}
@@ -1305,7 +1325,7 @@ function PendingQueueView() {
               item={detailItem}
               isL2={isL2}
               onClose={() => setDetailItem(null)}
-              onApprove={handleApprove}
+              onApprove={openApproveDialog}
               onOpenReject={openRejectDialog}
               onOpenForward={openForwardDialog}
               isApproving={approveMutation.isPending}
@@ -1314,6 +1334,58 @@ function PendingQueueView() {
           </>
         )}
       </AnimatePresence>
+
+      {/* ── Approve Confirmation Dialog ── */}
+      <Dialog
+        open={approveDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) setApproveDialogOpen(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-md bg-[hsl(var(--card))] border-[hsl(var(--border))]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[hsl(var(--foreground))]">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              {isL2 ? "Confirm L2 Approval" : "Confirm Approval"}
+            </DialogTitle>
+            <DialogDescription className="text-[hsl(var(--muted-foreground))]">
+              {(() => {
+                const t = enrichedItems.find((i) => i.id === approveTargetId);
+                if (!t) return "This will approve the request and commit the stock movement.";
+                return isL2
+                  ? `Final approval for ${t.qty_requested} ${t.uom} of ${t.stock_name}. This commits the stock movement and cannot be undone.`
+                  : `Approve ${t.qty_requested} ${t.uom} of ${t.stock_name} for ${t.recipient_name}. Low-risk items are cleared immediately; high-value items route to L2.`;
+              })()}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Textarea
+              value={approveRemarks}
+              onChange={(e) => setApproveRemarks(e.target.value)}
+              placeholder="Optional approval remarks..."
+              className="resize-none h-20 bg-[hsl(var(--background))] border-[hsl(var(--border))] text-sm"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setApproveDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white"
+              disabled={approveMutation.isPending}
+              onClick={handleApproveConfirm}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+              {approveMutation.isPending ? "Approving..." : "Confirm Approve"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Reject Dialog ── */}
       <Dialog

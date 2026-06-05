@@ -17,11 +17,21 @@ export interface ExcelRowError {
   field: string;
   errorType: string;
   message: string;
+  value?: string;
+}
+
+export interface RowCorrection {
+  rowNumber: number;
+  field: string;
+  original_value: string;
+  corrected_value: string;
+  reason: string;
 }
 
 export interface SelfHealResult {
   correctedRows: Record<string, unknown>[];
   errors: ExcelRowError[];
+  corrections: RowCorrection[];
 }
 
 export interface AnomalyExplanation {
@@ -289,7 +299,11 @@ Return ONLY valid JSON: { correctedRows: [...], errors: [{rowNumber, field, erro
 
   const aiResponse = await callOpenAI(systemPrompt, userPrompt);
 
-  let result: SelfHealResult;
+  // Always run the deterministic rule engine — it produces aligned rows,
+  // field-level corrections, and errors. If Azure returned usable rows we still
+  // fold them in, but the rule engine is the source of truth for corrections so
+  // the "Auto-Correct" feature works even when Azure is not configured.
+  const result = fallbackValidateRows(rows, uploadType);
 
   if (aiResponse) {
     try {
@@ -297,21 +311,32 @@ Return ONLY valid JSON: { correctedRows: [...], errors: [{rowNumber, field, erro
         correctedRows?: Record<string, unknown>[];
         errors?: ExcelRowError[];
       };
-      result = {
-        correctedRows: Array.isArray(parsed.correctedRows)
-          ? parsed.correctedRows
-          : rows,
-        errors: Array.isArray(parsed.errors) ? parsed.errors : [],
-      };
+      if (Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+        // Merge any extra AI-detected errors (deduped by row+field).
+        for (const e of parsed.errors) {
+          if (!result.errors.some((x) => x.rowNumber === e.rowNumber && x.field === e.field)) {
+            result.errors.push(e);
+          }
+        }
+      }
     } catch {
-      result = fallbackValidateRows(rows, uploadType);
+      /* keep rule-engine result */
     }
-  } else {
-    result = fallbackValidateRows(rows, uploadType);
   }
 
   cacheSet(cacheKey, result);
   return result;
+}
+
+// Canonical units of measure and common synonyms used for auto-correction.
+const UOM_SYNONYMS: Record<string, string> = {
+  pc: "Pieces", pcs: "Pieces", piece: "Pieces", pieces: "Pieces",
+  unit: "Units", units: "Units", nos: "Units", no: "Units", qty: "Units",
+  box: "Box", boxes: "Box", set: "Set", sets: "Set", pack: "Pack", packs: "Pack",
+};
+
+function toTitleCase(s: string): string {
+  return s.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 }
 
 function fallbackValidateRows(
@@ -319,69 +344,101 @@ function fallbackValidateRows(
   uploadType: "stock_master" | "distribution"
 ): SelfHealResult {
   const errors: ExcelRowError[] = [];
+  const corrections: RowCorrection[] = [];
   const correctedRows: Record<string, unknown>[] = [];
 
-  const stockRequiredFields = [
-    "stock_code",
-    "stock_name",
-    "category",
-    "unit_of_measure",
-  ];
-  const distRequiredFields = [
-    "stock_code",
-    "qty_requested",
-    "recipient_name",
-    "distribution_date",
-  ];
-  const required =
-    uploadType === "stock_master" ? stockRequiredFields : distRequiredFields;
+  const stockRequiredFields = ["stock_code", "stock_name", "category", "unit_of_measure"];
+  const distRequiredFields = ["stock_code", "qty_requested", "recipient_name", "distribution_date"];
+  const required = uploadType === "stock_master" ? stockRequiredFields : distRequiredFields;
+  const numericFields =
+    uploadType === "stock_master" ? ["opening_quantity", "min_stock_level"] : ["qty_requested"];
 
   rows.forEach((row, idx) => {
     const rowNumber = idx + 2; // Excel row number (header = 1)
-    const corrected = { ...row };
-    let hasError = false;
+    // Keep rows aligned 1:1 with the input — never drop a row, so downstream
+    // indices stay valid. Validity is signalled via the errors array.
+    const corrected: Record<string, unknown> = { ...row };
 
-    for (const field of required) {
-      if (
-        row[field] === undefined ||
-        row[field] === null ||
-        String(row[field]).trim() === ""
-      ) {
-        errors.push({
+    const record = (field: string, original: unknown, next: unknown, reason: string) => {
+      if (String(original ?? "") !== String(next ?? "")) {
+        corrections.push({
           rowNumber,
           field,
-          errorType: "MISSING_REQUIRED",
-          message: `Required field '${field}' is missing`,
+          original_value: String(original ?? ""),
+          corrected_value: String(next ?? ""),
+          reason,
         });
-        hasError = true;
+      }
+      corrected[field] = next;
+    };
+
+    // 1) Trim all string values.
+    for (const [k, v] of Object.entries(corrected)) {
+      if (typeof v === "string" && v !== v.trim()) {
+        record(k, v, v.trim(), "Trimmed surrounding whitespace");
       }
     }
 
-    const numericFields =
-      uploadType === "stock_master"
-        ? ["opening_quantity", "min_stock_level"]
-        : ["qty_requested"];
+    // 2) Field-specific normalisation.
+    if (corrected["stock_code"] != null && String(corrected["stock_code"]).trim() !== "") {
+      const up = String(corrected["stock_code"]).trim().toUpperCase();
+      record("stock_code", corrected["stock_code"], up, "Standardised stock code to uppercase");
+    }
+    if (uploadType === "stock_master") {
+      if (corrected["category"] != null && String(corrected["category"]).trim() !== "") {
+        const tc = toTitleCase(String(corrected["category"]).trim());
+        record("category", corrected["category"], tc, "Standardised category capitalisation");
+      }
+      if (corrected["unit_of_measure"] != null && String(corrected["unit_of_measure"]).trim() !== "") {
+        const raw = String(corrected["unit_of_measure"]).trim();
+        const canon = UOM_SYNONYMS[raw.toLowerCase()];
+        if (canon) record("unit_of_measure", corrected["unit_of_measure"], canon, "Standardised unit of measure");
+      }
+    }
 
+    // 3) Numeric coercion + sanity (negative → 0).
     for (const field of numericFields) {
-      if (row[field] !== undefined && isNaN(Number(row[field]))) {
+      if (corrected[field] === undefined || corrected[field] === null || String(corrected[field]).trim() === "") {
+        continue; // handled by required-field check below if required
+      }
+      const n = Number(corrected[field]);
+      if (isNaN(n)) {
         errors.push({
           rowNumber,
           field,
           errorType: "INVALID_NUMBER",
           message: `Field '${field}' must be a numeric value`,
+          value: String(corrected[field]),
         });
-        hasError = true;
-      } else if (row[field] !== undefined) {
-        corrected[field] = Number(row[field]);
+      } else {
+        if (n < 0) {
+          record(field, corrected[field], 0, "Negative quantity reset to 0");
+        } else if (String(corrected[field]) !== String(n)) {
+          record(field, corrected[field], n, "Converted to a number");
+        } else {
+          corrected[field] = n;
+        }
       }
     }
 
-    if (!hasError) {
-      correctedRows.push(corrected);
+    // 4) Required-field validation (after correction). Unfixable → error.
+    for (const field of required) {
+      const v = corrected[field];
+      if (v === undefined || v === null || String(v).trim() === "") {
+        errors.push({
+          rowNumber,
+          field,
+          errorType: "MISSING_REQUIRED",
+          message: `Required field '${field}' is missing`,
+          value: "",
+        });
+      }
     }
+
+    correctedRows.push(corrected);
   });
 
-  return { correctedRows, errors };
+  return { correctedRows, errors, corrections };
 }
 
 // ─── 3. explainAnomaly ────────────────────────────────────────────────────────

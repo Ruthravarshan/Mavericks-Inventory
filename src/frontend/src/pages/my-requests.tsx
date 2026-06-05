@@ -14,8 +14,9 @@ import {
   Calendar,
   Zap,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { requestsApi } from "@/lib/api";
+import { toast } from "@/hooks/use-toast";
 import { QUERY_KEYS, PRIORITY_COLORS } from "@/lib/constants";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -153,6 +154,17 @@ function RequestCard({ request }: { request: AssetRequest }) {
   const Icon = cfg.icon;
   const leftBorder = PRIORITY_BORDER[request.priority] ?? "border-l-[hsl(var(--border))]";
 
+  const qc = useQueryClient();
+  const acknowledge = useMutation({
+    mutationFn: () => requestsApi.acknowledge(request.id),
+    onSuccess: () => {
+      toast({ title: "Receipt acknowledged", description: "Thanks for confirming you received the asset." });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.REQUESTS });
+    },
+    onError: () => toast({ title: "Could not acknowledge", variant: "destructive" }),
+  });
+  const canAcknowledge = request.status === "fulfilled" && !request.acknowledged_at;
+
   return (
     <motion.div
       variants={cardVariants}
@@ -220,6 +232,24 @@ function RequestCard({ request }: { request: AssetRequest }) {
           <Clock className="h-3 w-3" />
           {PRIORITY_HINT[request.priority]}
         </p>
+
+        {/* Employee acknowledgement of receipt */}
+        {canAcknowledge && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-green-500/30 bg-green-500/10 p-3">
+            <p className="text-xs text-[hsl(var(--foreground))]">
+              Your asset has been assigned. Please confirm you've received it.
+            </p>
+            <Button
+              size="sm"
+              className="h-8 gap-1.5 bg-green-600 text-white hover:bg-green-500"
+              disabled={acknowledge.isPending}
+              onClick={() => acknowledge.mutate()}
+            >
+              {acknowledge.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+              Acknowledge Receipt
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Timeline footer */}
@@ -238,6 +268,12 @@ function RequestCard({ request }: { request: AssetRequest }) {
           <span className="flex items-center gap-1.5 font-medium text-green-400">
             <Star className="h-3 w-3" />
             Fulfilled {new Date(request.fulfilled_at).toLocaleDateString()}
+          </span>
+        )}
+        {request.acknowledged_at && (
+          <span className="flex items-center gap-1.5 font-medium text-emerald-400">
+            <CheckCircle2 className="h-3 w-3" />
+            Received {new Date(request.acknowledged_at).toLocaleDateString()}
           </span>
         )}
       </div>

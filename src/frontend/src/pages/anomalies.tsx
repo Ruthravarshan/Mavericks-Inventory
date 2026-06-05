@@ -95,7 +95,7 @@ function ResolveModal({
   );
 }
 
-function AnomalyCard({ anomaly }: { anomaly: Anomaly }) {
+function AnomalyCard({ anomaly, onView }: { anomaly: Anomaly; onView?: (a: Anomaly) => void }) {
   const [showFull, setShowFull] = useState(false);
   const [confirmDismiss, setConfirmDismiss] = useState(false);
   const acknowledge = useAcknowledgeAnomaly();
@@ -112,8 +112,11 @@ function AnomalyCard({ anomaly }: { anomaly: Anomaly }) {
   }[anomaly.severity];
 
   return (
-    <div className={cn(
+    <div
+      onClick={() => onView?.(anomaly)}
+      className={cn(
       "rounded-xl border border-l-4 p-5 space-y-4 shadow-sm transition-all",
+      onView ? "cursor-pointer hover:shadow-md hover:brightness-110" : "",
       isClosed ? "opacity-75 saturate-50" : "",
       anomaly.severity === "critical" ? "border-red-500/40 border-l-red-500 bg-red-500/[0.07]" :
       anomaly.severity === "warning" ? "border-amber-500/40 border-l-amber-500 bg-amber-500/[0.07]" :
@@ -164,7 +167,7 @@ function AnomalyCard({ anomaly }: { anomaly: Anomaly }) {
         </p>
         {(anomaly.ai_explanation ?? "").length > 160 && (
           <button
-            onClick={() => setShowFull((v) => !v)}
+            onClick={(e) => { e.stopPropagation(); setShowFull((v) => !v); }}
             className="mt-1 text-xs text-[hsl(var(--primary))] hover:underline"
           >
             {showFull ? "Show less" : "Read more"}
@@ -196,7 +199,8 @@ function AnomalyCard({ anomaly }: { anomaly: Anomaly }) {
             variant="outline"
             className="flex-1"
             disabled={acknowledge.isPending}
-            onClick={async () => {
+            onClick={async (e) => {
+              e.stopPropagation();
               try {
                 await acknowledge.mutateAsync(anomaly.id);
                 toast({ title: "Anomaly acknowledged" });
@@ -213,7 +217,7 @@ function AnomalyCard({ anomaly }: { anomaly: Anomaly }) {
             variant="ghost"
             className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
             disabled={dismiss.isPending}
-            onClick={() => setConfirmDismiss(true)}
+            onClick={(e) => { e.stopPropagation(); setConfirmDismiss(true); }}
             title="Dismiss anomaly"
           >
             <EyeOff className="h-4 w-4" />
@@ -271,10 +275,168 @@ function AnomalyCard({ anomaly }: { anomaly: Anomaly }) {
   );
 }
 
+// Full detail view for a single anomaly — opened by clicking a card. Exposes
+// every action (acknowledge / dismiss / mark resolved) regardless of entry point.
+function AnomalyDetailDialog({
+  anomaly,
+  onClose,
+  onResolve,
+}: {
+  anomaly: Anomaly | null;
+  onClose: () => void;
+  onResolve: (a: Anomaly) => void;
+}) {
+  const acknowledge = useAcknowledgeAnomaly();
+  const dismiss = useDismissAnomaly();
+  const [confirmDismiss, setConfirmDismiss] = useState(false);
+
+  const a = anomaly;
+
+  return (
+    <Dialog open={!!anomaly} onOpenChange={(o) => { if (!o) { setConfirmDismiss(false); onClose(); } }}>
+      <DialogContent className="max-w-lg">
+        {a && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <span className={cn("h-2.5 w-2.5 rounded-full", {
+                  "bg-red-500": a.severity === "critical",
+                  "bg-amber-500": a.severity === "warning",
+                  "bg-blue-500": a.severity === "info",
+                })} />
+                {a.stock_name}
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={cn("rounded-full border px-2 py-0.5 text-xs font-semibold", SEVERITY_COLORS[a.severity])}>
+                  {a.severity.toUpperCase()}
+                </span>
+                <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium capitalize", {
+                  "bg-red-500/20 text-red-400": a.status === "active",
+                  "bg-blue-500/20 text-blue-400": a.status === "acknowledged",
+                  "bg-green-500/20 text-green-400": a.status === "resolved",
+                  "bg-gray-500/20 text-gray-400": a.status === "dismissed",
+                })}>
+                  {a.status}
+                </span>
+                <span className="text-xs font-medium text-[hsl(var(--muted-foreground))]">{a.anomaly_type}</span>
+                {a.stock_code && (
+                  <span className="font-mono text-xs text-[hsl(var(--muted-foreground))]">{a.stock_code}</span>
+                )}
+              </div>
+              <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                Detected {formatRelativeTime(a.detected_at)}
+              </p>
+
+              {a.description && <p className="text-sm">{a.description}</p>}
+
+              <div className="rounded-lg border border-[hsl(var(--border))]/50 bg-[hsl(var(--secondary))]/40 p-3">
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--primary))]">
+                  <Brain className="h-3 w-3" />
+                  AI Explanation
+                </div>
+                <p className="text-sm">{a.ai_explanation}</p>
+              </div>
+
+              <div>
+                <p className="mb-1 text-xs font-medium text-[hsl(var(--muted-foreground))]">Recommended Action</p>
+                <p className="text-sm">{a.recommended_action}</p>
+              </div>
+
+              {a.status === "resolved" && a.resolved_at && (
+                <div className="rounded-lg bg-green-500/10 px-3 py-2 text-xs text-green-400">
+                  Resolved by {a.resolved_by} · {formatRelativeTime(a.resolved_at)}
+                  {a.resolution_notes && <p className="mt-1 text-green-400/70">{a.resolution_notes}</p>}
+                </div>
+              )}
+
+              {confirmDismiss && (
+                <div className="space-y-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+                  <p className="text-sm text-[hsl(var(--foreground))]">
+                    Dismiss this anomaly as not actionable? This is recorded in the audit log.
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setConfirmDismiss(false)}>Cancel</Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={dismiss.isPending}
+                      onClick={async () => {
+                        try {
+                          await dismiss.mutateAsync(a.id);
+                          toast({ title: "Anomaly dismissed" });
+                          setConfirmDismiss(false);
+                          onClose();
+                        } catch {
+                          toast({ title: "Failed to dismiss", variant: "destructive" });
+                        }
+                      }}
+                    >
+                      {dismiss.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm Dismiss"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="gap-2">
+              {a.status === "active" && !confirmDismiss && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                    onClick={() => setConfirmDismiss(true)}
+                  >
+                    <EyeOff className="h-4 w-4 mr-1" />
+                    Dismiss
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={acknowledge.isPending}
+                    onClick={async () => {
+                      try {
+                        await acknowledge.mutateAsync(a.id);
+                        toast({ title: "Anomaly acknowledged" });
+                        onClose();
+                      } catch {
+                        toast({ title: "Failed to acknowledge", variant: "destructive" });
+                      }
+                    }}
+                  >
+                    {acknowledge.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4 mr-1" />}
+                    Acknowledge
+                  </Button>
+                </>
+              )}
+              {a.status === "acknowledged" && (
+                <Button
+                  size="sm"
+                  className="bg-green-600 hover:bg-green-500 text-white"
+                  onClick={() => { onResolve(a); onClose(); }}
+                >
+                  <CheckCircle2 className="h-4 w-4 mr-1" />
+                  Mark as Resolved
+                </Button>
+              )}
+              {(a.status === "resolved" || a.status === "dismissed") && (
+                <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
+              )}
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function AnomaliesPage() {
   const [severity, setSeverity] = useState("");
   const [showResolved, setShowResolved] = useState(false);
   const [resolveAnomaly, setResolveAnomaly] = useState<Anomaly | null>(null);
+  const [detailAnomaly, setDetailAnomaly] = useState<Anomaly | null>(null);
 
   const { data: allData, isLoading } = useListAnomalies({ severity: severity || undefined });
   const { data: criticalData } = useListAnomalies({ severity: "critical", status: "active" });
@@ -330,7 +492,14 @@ export default function AnomaliesPage() {
 
       <Tabs defaultValue="all" onValueChange={(v) => setSeverity(v === "all" ? "" : v)}>
         <TabsList>
-          <TabsTrigger value="all">All</TabsTrigger>
+          <TabsTrigger value="all">
+            All
+            {((criticalData?.total ?? 0) + (warningData?.total ?? 0) + (infoData?.total ?? 0)) > 0 && (
+              <span className="ml-2 rounded-full bg-[hsl(var(--secondary))] px-1.5 py-0.5 text-xs text-[hsl(var(--foreground))]">
+                {(criticalData?.total ?? 0) + (warningData?.total ?? 0) + (infoData?.total ?? 0)}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="critical">
             Critical
             {(criticalData?.total ?? 0) > 0 && (
@@ -339,8 +508,22 @@ export default function AnomaliesPage() {
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="warning">Warning</TabsTrigger>
-          <TabsTrigger value="info">Info</TabsTrigger>
+          <TabsTrigger value="warning">
+            Warning
+            {(warningData?.total ?? 0) > 0 && (
+              <span className="ml-2 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-400">
+                {warningData?.total}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="info">
+            Info
+            {(infoData?.total ?? 0) > 0 && (
+              <span className="ml-2 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-xs text-blue-400">
+                {infoData?.total}
+              </span>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="all" className="mt-4">
@@ -348,6 +531,7 @@ export default function AnomaliesPage() {
             anomalies={anomalies}
             isLoading={isLoading}
             onResolve={setResolveAnomaly}
+            onView={setDetailAnomaly}
           />
         </TabsContent>
         <TabsContent value="critical" className="mt-4">
@@ -355,6 +539,7 @@ export default function AnomaliesPage() {
             anomalies={anomalies}
             isLoading={isLoading}
             onResolve={setResolveAnomaly}
+            onView={setDetailAnomaly}
           />
         </TabsContent>
         <TabsContent value="warning" className="mt-4">
@@ -362,6 +547,7 @@ export default function AnomaliesPage() {
             anomalies={anomalies}
             isLoading={isLoading}
             onResolve={setResolveAnomaly}
+            onView={setDetailAnomaly}
           />
         </TabsContent>
         <TabsContent value="info" className="mt-4">
@@ -369,9 +555,16 @@ export default function AnomaliesPage() {
             anomalies={anomalies}
             isLoading={isLoading}
             onResolve={setResolveAnomaly}
+            onView={setDetailAnomaly}
           />
         </TabsContent>
       </Tabs>
+
+      <AnomalyDetailDialog
+        anomaly={detailAnomaly}
+        onClose={() => setDetailAnomaly(null)}
+        onResolve={setResolveAnomaly}
+      />
 
       <ResolveModal
         anomaly={resolveAnomaly}
@@ -385,10 +578,12 @@ function AnomalyGrid({
   anomalies,
   isLoading,
   onResolve,
+  onView,
 }: {
   anomalies: Anomaly[];
   isLoading: boolean;
   onResolve: (a: Anomaly) => void;
+  onView?: (a: Anomaly) => void;
 }) {
   if (isLoading) {
     return (
@@ -414,7 +609,7 @@ function AnomalyGrid({
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {anomalies.map((anomaly) => (
         <div key={anomaly.id} className="relative">
-          <AnomalyCard anomaly={anomaly} />
+          <AnomalyCard anomaly={anomaly} onView={onView} />
           {anomaly.status === "acknowledged" && (
             <button
               onClick={() => onResolve(anomaly)}

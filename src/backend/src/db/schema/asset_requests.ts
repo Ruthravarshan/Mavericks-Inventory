@@ -39,6 +39,8 @@ export const assetRequests = pgTable("asset_requests", {
   reviewNotes: text("review_notes"),
   fulfilledAssetId: integer("fulfilled_asset_id").references(() => assets.id),
   fulfilledAt: timestamp("fulfilled_at"),
+  acknowledgedBy: integer("acknowledged_by").references(() => users.id),
+  acknowledgedAt: timestamp("acknowledged_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

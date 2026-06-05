@@ -50,6 +50,7 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
         reviewedAt: assetRequests.reviewedAt,
         fulfilledAt: assetRequests.fulfilledAt,
         fulfilledAssetId: assetRequests.fulfilledAssetId,
+        acknowledgedAt: assetRequests.acknowledgedAt,
         createdAt: assetRequests.createdAt,
       })
       .from(assetRequests)
@@ -77,6 +78,7 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
         reviewed_at: r.reviewedAt?.toISOString() ?? null,
         fulfilled_at: r.fulfilledAt?.toISOString() ?? null,
         fulfilled_asset_id: r.fulfilledAssetId ? String(r.fulfilledAssetId) : null,
+        acknowledged_at: r.acknowledgedAt?.toISOString() ?? null,
         created_at: r.createdAt.toISOString(),
       })),
       total: totalNum,
@@ -301,6 +303,68 @@ router.post("/:id/fulfill", requireRole("admin", "manager"), async (req: Request
     });
 
     res.json({ message: "Request fulfilled and asset assigned", assignment_code: assignmentCode });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /requests/:id/acknowledge ──────────────────────────────────────────
+// Employee confirms they have received the fulfilled asset.
+router.post("/:id/acknowledge", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      res.status(400).json({ error_code: "INVALID_ID", message: "Invalid request ID" });
+      return;
+    }
+
+    const [request] = await db.select().from(assetRequests).where(eq(assetRequests.id, id)).limit(1);
+    if (!request) {
+      res.status(404).json({ error_code: "NOT_FOUND", message: "Request not found" });
+      return;
+    }
+    // Only the requester can acknowledge their own request.
+    if (request.requestedBy !== req.user!.id) {
+      res.status(403).json({ error_code: "FORBIDDEN", message: "You can only acknowledge your own requests" });
+      return;
+    }
+    if (request.status !== "fulfilled") {
+      res.status(400).json({ error_code: "INVALID_STATE", message: "Only fulfilled requests can be acknowledged" });
+      return;
+    }
+    if (request.acknowledgedAt) {
+      res.json({ message: "Request already acknowledged" });
+      return;
+    }
+
+    await db.update(assetRequests).set({
+      acknowledgedBy: req.user!.id,
+      acknowledgedAt: new Date(),
+      updatedAt: new Date(),
+    }).where(eq(assetRequests.id, id));
+
+    await db.insert(activity).values({
+      eventType: "asset_request_acknowledged",
+      description: `${req.user!.name} acknowledged receipt for request ${request.requestCode}`,
+      actor: req.user!.email,
+      entityType: "asset_request",
+      entityId: id,
+      ipAddress: req.ip,
+    });
+
+    // Notify the manager who fulfilled it (best-effort).
+    if (request.reviewedBy) {
+      await db.insert(notifications).values({
+        userId: request.reviewedBy,
+        type: "request_acknowledged",
+        title: "Asset receipt acknowledged",
+        message: `${req.user!.name} confirmed receipt for ${request.itemDescription}.`,
+        relatedEntityType: "asset_request",
+        relatedEntityId: id,
+      });
+    }
+
+    res.json({ message: "Receipt acknowledged" });
   } catch (err) {
     next(err);
   }

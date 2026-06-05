@@ -344,6 +344,120 @@ router.put("/:id", async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+// ─── POST /stocks/:id/activate ────────────────────────────────────────────────
+// Moves a draft OR inactive stock item to "active". Dedicated endpoint because
+// PUT /:id refuses to touch inactive rows.
+
+router.post(
+  "/:id/activate",
+  requireRole("manager", "admin"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({ error_code: "INVALID_ID", message: "Invalid stock ID" });
+        return;
+      }
+
+      const [existing] = await db
+        .select()
+        .from(stocks)
+        .where(and(eq(stocks.id, id), isNull(stocks.deletedAt)))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error_code: "NOT_FOUND", message: "Stock not found" });
+        return;
+      }
+      if (existing.status === "active") {
+        res.status(400).json({ error_code: "INVALID_STATUS", message: "Stock is already active" });
+        return;
+      }
+
+      const [updated] = await db
+        .update(stocks)
+        .set({ status: "active", updatedBy: req.user!.id, updatedAt: new Date() })
+        .where(eq(stocks.id, id))
+        .returning();
+
+      await indexStockItem(updated);
+
+      await db.insert(activity).values({
+        eventType: "stock_activated",
+        description: `Stock item "${updated.stockName}" activated`,
+        actor: req.user!.email,
+        entityType: "stock",
+        entityId: updated.id,
+        oldValue: JSON.stringify({ status: existing.status }),
+        newValue: JSON.stringify({ status: "active" }),
+        ipAddress: req.ip,
+      });
+
+      res.json(toStockResponse(updated));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ─── POST /stocks/:id/deactivate ──────────────────────────────────────────────
+// Moves an active stock item to "inactive" (archived).
+
+router.post(
+  "/:id/deactivate",
+  requireRole("manager", "admin"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({ error_code: "INVALID_ID", message: "Invalid stock ID" });
+        return;
+      }
+
+      const [existing] = await db
+        .select()
+        .from(stocks)
+        .where(and(eq(stocks.id, id), isNull(stocks.deletedAt)))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error_code: "NOT_FOUND", message: "Stock not found" });
+        return;
+      }
+      if (existing.status !== "active") {
+        res.status(400).json({
+          error_code: "INVALID_STATUS",
+          message: "Only active stocks can be deactivated",
+        });
+        return;
+      }
+
+      const [updated] = await db
+        .update(stocks)
+        .set({ status: "inactive", updatedBy: req.user!.id, updatedAt: new Date() })
+        .where(eq(stocks.id, id))
+        .returning();
+
+      await indexStockItem(updated);
+
+      await db.insert(activity).values({
+        eventType: "stock_deactivated",
+        description: `Stock item "${updated.stockName}" deactivated`,
+        actor: req.user!.email,
+        entityType: "stock",
+        entityId: updated.id,
+        oldValue: JSON.stringify({ status: existing.status }),
+        newValue: JSON.stringify({ status: "inactive" }),
+        ipAddress: req.ip,
+      });
+
+      res.json(toStockResponse(updated));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // ─── DELETE /stocks/:id ───────────────────────────────────────────────────────
 
 router.delete(

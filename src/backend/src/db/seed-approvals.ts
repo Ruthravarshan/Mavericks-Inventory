@@ -62,7 +62,7 @@ type Plan = {
 const PLANS: Plan[] = [
   // ─── L1 Pending Queue (approval: pending) ──────────────────────────────────
   {
-    code: "001", stockCode: "MSE-001", qty: 5, createdByEmail: "employee@example.com",
+    code: "001", stockCode: "MSE-001", qty: 5, createdByEmail: "employee@mavericks.com",
     recipientType: "employee", recipientId: "EMP-001", recipientName: "John Developer",
     purpose: "Replacement mice for the engineering pod after hardware refresh.",
     location: "Head Office", distStatus: "l1_pending", apprStatus: "pending",
@@ -71,7 +71,7 @@ const PLANS: Plan[] = [
     confidence: 0.94, submittedDaysAgo: 1,
   },
   {
-    code: "002", stockCode: "CAB-001", qty: 20, createdByEmail: "sarah@example.com",
+    code: "002", stockCode: "CAB-001", qty: 20, createdByEmail: "sarah@mavericks.com",
     recipientType: "project", recipientId: "PRJ-NET-12", recipientName: "Floor-3 Network Rollout",
     purpose: "CAT6 patch cables for the third-floor network re-cabling project.",
     location: "Warehouse C", distStatus: "l1_pending", apprStatus: "pending",
@@ -80,7 +80,7 @@ const PLANS: Plan[] = [
     confidence: 0.9, submittedDaysAgo: 2,
   },
   {
-    code: "003", stockCode: "UPS-001", qty: 3, createdByEmail: "exec@example.com",
+    code: "003", stockCode: "UPS-001", qty: 3, createdByEmail: "exec@mavericks.com",
     recipientType: "employee", recipientId: "EMP-EXEC-001", recipientName: "Executive User",
     purpose: "UPS units for the branch-office server cabinet.",
     location: "Branch A", distStatus: "l1_pending", apprStatus: "pending",
@@ -89,7 +89,7 @@ const PLANS: Plan[] = [
     confidence: 0.88, submittedDaysAgo: 1,
   },
   {
-    code: "004", stockCode: "MON-001", qty: 25, createdByEmail: "employee@example.com",
+    code: "004", stockCode: "MON-001", qty: 25, createdByEmail: "employee@mavericks.com",
     recipientType: "project", recipientId: "PRJ-DESK-07", recipientName: "Trading Desk Expansion",
     purpose: "Monitors for the new trading-desk workstations.",
     location: "Head Office", distStatus: "l1_pending", apprStatus: "pending",
@@ -98,7 +98,7 @@ const PLANS: Plan[] = [
     confidence: 0.71, submittedDaysAgo: 3,
   },
   {
-    code: "005", stockCode: "PRN-001", qty: 8, createdByEmail: "sarah@example.com",
+    code: "005", stockCode: "PRN-001", qty: 8, createdByEmail: "sarah@mavericks.com",
     recipientType: "employee", recipientId: "EMP-002", recipientName: "Sarah Designer",
     purpose: "Printers for the design studio refresh.",
     location: "Branch Office", distStatus: "l1_pending", apprStatus: "pending",
@@ -107,7 +107,7 @@ const PLANS: Plan[] = [
     confidence: 0.68, submittedDaysAgo: 4,
   },
   {
-    code: "006", stockCode: "LAP-001", qty: 40, createdByEmail: "employee@example.com",
+    code: "006", stockCode: "LAP-001", qty: 40, createdByEmail: "employee@mavericks.com",
     recipientType: "project", recipientId: "PRJ-ONB-22", recipientName: "Q3 Bulk Onboarding",
     purpose: "Laptops for incoming contractor cohort.",
     location: "Head Office", distStatus: "l1_pending", apprStatus: "pending",
@@ -116,7 +116,7 @@ const PLANS: Plan[] = [
     confidence: 0.83, submittedDaysAgo: 2,
   },
   {
-    code: "007", stockCode: "NET-001", qty: 10, createdByEmail: "exec@example.com",
+    code: "007", stockCode: "NET-001", qty: 10, createdByEmail: "exec@mavericks.com",
     recipientType: "project", recipientId: "PRJ-NET-12", recipientName: "Floor-3 Network Rollout",
     purpose: "Network switches for the new floor distribution layer.",
     location: "Network Room", distStatus: "l1_pending", apprStatus: "pending",
@@ -127,23 +127,23 @@ const PLANS: Plan[] = [
 
   // ─── L2 Pending Queue (approval: l1_approved, requiresL2) ───────────────────
   {
-    code: "008", stockCode: "SRV-001", qty: 3, createdByEmail: "employee@example.com",
+    code: "008", stockCode: "SRV-001", qty: 3, createdByEmail: "employee@mavericks.com",
     recipientType: "project", recipientId: "PRJ-DC-03", recipientName: "Data-Centre Capacity",
     purpose: "Rack servers for the capacity-expansion programme.",
     location: "Data Centre", distStatus: "l2_pending", apprStatus: "l1_approved",
     riskScore: 72, riskLevel: "High", rec: "Review", requiresL2: true,
-    l1ApprovedByEmail: "manager@example.com",
+    l1ApprovedByEmail: "manager@mavericks.com",
     l1Remarks: "Technically valid and within DC norms. Escalating to L2 — Server category requires final sign-off by policy.",
     reasoning: "Server-category item requires L2 authorisation by policy regardless of quantity. The request is technically valid but carries high financial value, so final sign-off is escalated.",
     confidence: 0.79, submittedDaysAgo: 2,
   },
   {
-    code: "009", stockCode: "LAP-001", qty: 60, createdByEmail: "sarah@example.com",
+    code: "009", stockCode: "LAP-001", qty: 60, createdByEmail: "sarah@mavericks.com",
     recipientType: "project", recipientId: "PRJ-ONB-22", recipientName: "Q3 Bulk Onboarding",
     purpose: "Bulk laptop allocation for company-wide refresh.",
     location: "Head Office", distStatus: "l2_pending", apprStatus: "l1_approved",
     riskScore: 85, riskLevel: "High", rec: "Reject", requiresL2: true,
-    l1ApprovedByEmail: "manager@example.com",
+    l1ApprovedByEmail: "manager@mavericks.com",
     l1Remarks: "Exceeds the 50-unit L2 threshold. Passing to L2 with concerns — stock impact is severe.",
     reasoning: "Quantity (60) exceeds the L2 escalation threshold of 50 and would critically deplete laptop stock below the minimum level. Strong written justification and phased delivery are required before any approval.",
     confidence: 0.86, submittedDaysAgo: 3,
@@ -151,7 +151,7 @@ const PLANS: Plan[] = [
 
   // ─── Approval History + Zero-Touch + Override (distributions only) ──────────
   {
-    code: "010", stockCode: "MSE-001", qty: 4, createdByEmail: "employee@example.com",
+    code: "010", stockCode: "MSE-001", qty: 4, createdByEmail: "employee@mavericks.com",
     recipientType: "employee", recipientId: "EMP-001", recipientName: "John Developer",
     purpose: "Spare mouse for a new starter.",
     location: "Head Office", distStatus: "approved",
@@ -160,7 +160,7 @@ const PLANS: Plan[] = [
     confidence: 0.96, submittedDaysAgo: 6,
   },
   {
-    code: "011", stockCode: "CAB-001", qty: 15, createdByEmail: "sarah@example.com",
+    code: "011", stockCode: "CAB-001", qty: 15, createdByEmail: "sarah@mavericks.com",
     recipientType: "project", recipientId: "PRJ-NET-12", recipientName: "Floor-3 Network Rollout",
     purpose: "Additional patch cables.",
     location: "Warehouse C", distStatus: "approved",
@@ -169,7 +169,7 @@ const PLANS: Plan[] = [
     confidence: 0.93, submittedDaysAgo: 7,
   },
   {
-    code: "012", stockCode: "MON-001", qty: 12, createdByEmail: "exec@example.com",
+    code: "012", stockCode: "MON-001", qty: 12, createdByEmail: "exec@mavericks.com",
     recipientType: "employee", recipientId: "EMP-EXEC-001", recipientName: "Executive User",
     purpose: "Monitors for the operations team.",
     location: "Branch A", distStatus: "approved",
@@ -178,7 +178,7 @@ const PLANS: Plan[] = [
     confidence: 0.7, submittedDaysAgo: 8,
   },
   {
-    code: "013", stockCode: "LAP-001", qty: 30, createdByEmail: "employee@example.com",
+    code: "013", stockCode: "LAP-001", qty: 30, createdByEmail: "employee@mavericks.com",
     recipientType: "project", recipientId: "PRJ-ONB-22", recipientName: "Q3 Bulk Onboarding",
     purpose: "Laptop request for onboarding.",
     location: "Head Office", distStatus: "rejected",
@@ -187,7 +187,7 @@ const PLANS: Plan[] = [
     confidence: 0.84, submittedDaysAgo: 9,
   },
   {
-    code: "014", stockCode: "SRV-001", qty: 2, createdByEmail: "manager@example.com",
+    code: "014", stockCode: "SRV-001", qty: 2, createdByEmail: "manager@mavericks.com",
     recipientType: "project", recipientId: "PRJ-DC-03", recipientName: "Data-Centre Capacity",
     purpose: "Emergency server replacement after hardware failure.",
     location: "Data Centre", distStatus: "approved",

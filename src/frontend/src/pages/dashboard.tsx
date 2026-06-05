@@ -13,6 +13,7 @@ import {
   Activity,
   Users,
   Database,
+  ChevronRight,
 } from "lucide-react";
 import {
   BarChart,
@@ -457,13 +458,13 @@ function AvailableVsRequiredCard() {
               <XAxis dataKey="name" tick={{ fill: "hsl(var(--chart-text))", fontSize: 10 }} stroke="hsl(var(--chart-grid))" interval={0} angle={-20} textAnchor="end" height={50} />
               <YAxis tick={{ fill: "hsl(var(--chart-text))", fontSize: 11 }} stroke="hsl(var(--chart-grid))" />
               <Tooltip {...CHART_TOOLTIP} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Legend wrapperStyle={{ fontSize: 12, color: "hsl(var(--chart-text))" }} />
               <Line
                 type="monotone"
                 dataKey="Available"
-                stroke="hsl(var(--primary))"
+                stroke="hsl(var(--info))"
                 strokeWidth={2.5}
-                dot={{ r: 3, fill: "hsl(var(--primary))" }}
+                dot={{ r: 3, fill: "hsl(var(--info))" }}
                 activeDot={{ r: 5 }}
               />
               <Line
@@ -795,7 +796,13 @@ function AdminDashboard() {
           <CardContent>
             <div className="space-y-2">
               {stats.pending_over_48h.map((item) => (
-                <div key={item.transaction_code} className="flex items-center justify-between rounded-lg bg-[hsl(var(--destructive))]/8 px-3 py-2">
+                <button
+                  key={item.transaction_code}
+                  type="button"
+                  onClick={() => navigate(`/approvals?q=${encodeURIComponent(item.transaction_code)}`)}
+                  className="flex w-full items-center justify-between rounded-lg bg-[hsl(var(--destructive))]/8 px-3 py-2 text-left transition-colors hover:bg-[hsl(var(--destructive))]/15 focus:outline-none focus:ring-2 focus:ring-[hsl(var(--destructive))]/40"
+                  title="Open in Approval Workbench"
+                >
                   <div>
                     <span className="text-sm font-medium">{item.transaction_code}</span>
                     <span className="ml-2 text-sm text-[hsl(var(--muted-foreground))]">{item.stock_name}</span>
@@ -805,8 +812,9 @@ function AdminDashboard() {
                     <span className="rounded-full bg-[hsl(var(--destructive))]/15 px-2 py-0.5 text-xs font-medium text-[hsl(var(--destructive))]">
                       {item.hours_pending}h pending
                     </span>
+                    <ChevronRight className="h-4 w-4 text-[hsl(var(--destructive))]" />
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </CardContent>

@@ -228,7 +228,7 @@ function AssetDetailPanel({
                 className="w-full gap-2 border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
                 onClick={() => { onReturn(asset); onClose(); }}
               >
-                Return to Inventory
+                {assignee ? "Return to Inventory" : "Reset to Available (no assignee)"}
               </Button>
             )}
             <Button variant="outline" className="w-full gap-2" disabled>
@@ -357,8 +357,9 @@ function AssetRow({
               variant="outline"
               className="h-7 border-amber-500/40 text-xs text-amber-400 hover:bg-amber-500/10"
               onClick={(e) => { e.stopPropagation(); onReturn(asset); }}
+              title={asset.current_assignee ? "Return to inventory" : "No active assignee — reset to available"}
             >
-              Return
+              {asset.current_assignee ? "Return" : "Reset"}
             </Button>
           )}
           <Button

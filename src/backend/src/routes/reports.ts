@@ -268,29 +268,32 @@ router.get("/:type", async (req: Request, res: Response, next: NextFunction) => 
       }
 
       case "user-activity": {
+        // Per-user aggregated SUMMARY (distinct from the raw Audit Log, which is
+        // a chronological event trail). One row per user with activity totals.
         columns = [
-          { key: "event_type", label: "Event", type: "string" },
-          { key: "description", label: "Description", type: "string" },
           { key: "actor", label: "User", type: "string" },
-          { key: "entity_type", label: "Entity Type", type: "string" },
-          { key: "ip_address", label: "IP", type: "string" },
-          { key: "created_at", label: "Timestamp", type: "date" },
+          { key: "total_events", label: "Total Events", type: "number" },
+          { key: "distributions", label: "Distributions", type: "number" },
+          { key: "approvals", label: "Approvals", type: "number" },
+          { key: "rejections", label: "Rejections", type: "number" },
+          { key: "last_active", label: "Last Active", type: "date" },
         ];
         const conditions = [];
-        if (q.date_from) conditions.push(sql`created_at >= ${new Date(q.date_from)}`);
-        if (q.date_to) conditions.push(sql`created_at <= ${new Date(q.date_to)}`);
+        if (q.date_from) conditions.push(sql`${activity.createdAt} >= ${new Date(q.date_from)}`);
+        if (q.date_to) conditions.push(sql`${activity.createdAt} <= ${new Date(q.date_to)}`);
         const data = await db
           .select({
-            event_type: activity.eventType,
-            description: activity.description,
             actor: activity.actor,
-            entity_type: activity.entityType,
-            ip_address: activity.ipAddress,
-            created_at: activity.createdAt,
+            total_events: sql<number>`COUNT(*)`,
+            distributions: sql<number>`COUNT(*) FILTER (WHERE ${activity.eventType} LIKE 'distribution%')`,
+            approvals: sql<number>`COUNT(*) FILTER (WHERE ${activity.eventType} LIKE '%approved')`,
+            rejections: sql<number>`COUNT(*) FILTER (WHERE ${activity.eventType} LIKE '%rejected')`,
+            last_active: sql<string>`MAX(${activity.createdAt})`,
           })
           .from(activity)
           .where(conditions.length ? and(...conditions) : undefined)
-          .orderBy(desc(activity.createdAt))
+          .groupBy(activity.actor)
+          .orderBy(desc(sql`MAX(${activity.createdAt})`))
           .limit(500);
         rows = toRows(data as unknown as object[]);
         break;

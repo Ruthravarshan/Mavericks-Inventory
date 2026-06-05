@@ -36,6 +36,7 @@ export const uploadJobs = pgTable("upload_jobs", {
   rowsFailed: integer("rows_failed").notNull().default(0),
   errorReportUrl: text("error_report_url"),
   errorReportJson: text("error_report_json"),
+  correctionsJson: text("corrections_json"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   completedAt: timestamp("completed_at"),
 });

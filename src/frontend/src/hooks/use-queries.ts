@@ -113,6 +113,30 @@ export function useDeleteStock() {
   });
 }
 
+export function useActivateStock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => stocksApi.activate(id).then((r) => r.data),
+    onSuccess: (_, id) => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.STOCKS });
+      void qc.invalidateQueries({ queryKey: [...QUERY_KEYS.STOCKS, id] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.DASHBOARD_SUMMARY });
+    },
+  });
+}
+
+export function useDeactivateStock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => stocksApi.deactivate(id).then((r) => r.data),
+    onSuccess: (_, id) => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.STOCKS });
+      void qc.invalidateQueries({ queryKey: [...QUERY_KEYS.STOCKS, id] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.DASHBOARD_SUMMARY });
+    },
+  });
+}
+
 // ─── Distributions ────────────────────────────────────────────────────────────
 
 export function useListDistributions(params?: DistributionListParams) {

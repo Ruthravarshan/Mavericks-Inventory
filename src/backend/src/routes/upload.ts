@@ -30,6 +30,20 @@ function toUploadJobResponse(job: UploadJobRow) {
     } catch { /* ignore parse errors */ }
   }
 
+  let corrections: { row: number; field: string; original_value: string; corrected_value: string; reason: string }[] = [];
+  if (job.correctionsJson) {
+    try {
+      const raw = JSON.parse(job.correctionsJson) as { rowNumber?: number; row?: number; field?: string; original_value?: string; corrected_value?: string; reason?: string }[];
+      corrections = raw.map((c) => ({
+        row: c.rowNumber ?? c.row ?? 0,
+        field: c.field ?? "",
+        original_value: String(c.original_value ?? ""),
+        corrected_value: String(c.corrected_value ?? ""),
+        reason: c.reason ?? "",
+      }));
+    } catch { /* ignore parse errors */ }
+  }
+
   return {
     id: String(job.id),
     job_type: job.uploadType === "stock_master" ? "stocks" : "distributions",
@@ -39,7 +53,7 @@ function toUploadJobResponse(job: UploadJobRow) {
     saved_rows: job.rowsValid ?? 0,
     corrected_rows: job.rowsCorrected ?? 0,
     failed_rows: job.rowsFailed ?? 0,
-    corrections: [] as { row: number; field: string; original_value: string; corrected_value: string; reason: string }[],
+    corrections,
     errors,
     uploaded_by: String(job.uploadedBy),
     uploaded_at: (job.createdAt ?? new Date()).toISOString(),
@@ -78,20 +92,35 @@ async function processStockUpload(jobId: number, buffer: Buffer, userId: number,
       rowsTotal: rawRows.length,
     }).where(eq(uploadJobs.id, jobId));
 
-    const { correctedRows, errors } = await selfHealExcelRows(rawRows, "stock_master");
+    const { correctedRows, errors, corrections } = await selfHealExcelRows(rawRows, "stock_master");
+
+    const correctedRowCount = new Set(corrections.map((c) => c.rowNumber)).size;
+
+    // Reject the WHOLE upload if any row is invalid — nothing is imported.
+    // Auto-corrected rows are NOT errors (they were fixed), so a file that only
+    // needed corrections still imports cleanly.
+    if (errors.length > 0) {
+      const failedRowCount = new Set(errors.map((e) => e.rowNumber)).size;
+      await db.update(uploadJobs).set({
+        status: "failed",
+        rowsValid: 0,
+        rowsCorrected: correctedRowCount,
+        rowsFailed: failedRowCount,
+        errorReportJson: JSON.stringify(errors),
+        correctionsJson: JSON.stringify(corrections),
+        completedAt: new Date(),
+      }).where(eq(uploadJobs.id, jobId));
+      logger.info({ jobId, failedRowCount }, "Stock upload rejected — invalid rows");
+      return;
+    }
 
     let rowsValid = 0;
-    let rowsCorrected = 0;
-    let rowsFailed = errors.length;
-
-    const errorRowNumbers = new Set(errors.map((e) => e.rowNumber));
+    let rowsFailed = 0;
+    const insertErrors: { rowNumber: number; field: string; errorType: string; message: string }[] = [];
 
     for (let i = 0; i < correctedRows.length; i++) {
       const rowNumber = i + 2;
-      if (errorRowNumbers.has(rowNumber)) continue;
-
       const row = correctedRows[i];
-      const isCorr = JSON.stringify(row) !== JSON.stringify(rawRows[i]);
 
       try {
         const openingQty = Number(row["opening_quantity"] ?? row["Opening Quantity"] ?? 0);
@@ -121,7 +150,6 @@ async function processStockUpload(jobId: number, buffer: Buffer, userId: number,
         }).onConflictDoNothing();
 
         rowsValid++;
-        if (isCorr) rowsCorrected++;
 
         // Ledger opening entry
         const [inserted] = await db
@@ -143,20 +171,24 @@ async function processStockUpload(jobId: number, buffer: Buffer, userId: number,
             remarks: `Imported via upload job ${jobId}`,
           }).onConflictDoNothing();
         }
-      } catch {
+      } catch (e) {
         rowsFailed++;
+        insertErrors.push({
+          rowNumber,
+          field: "stock_code",
+          errorType: "INSERT_FAILED",
+          message: e instanceof Error ? e.message : "Row could not be saved",
+        });
       }
     }
 
-    // Build error report
-    const errorReport = JSON.stringify(errors);
-
     await db.update(uploadJobs).set({
-      status: "completed",
+      status: rowsFailed > 0 ? "failed" : "completed",
       rowsValid,
-      rowsCorrected,
+      rowsCorrected: correctedRowCount,
       rowsFailed,
-      errorReportJson: errorReport,
+      errorReportJson: JSON.stringify(insertErrors),
+      correctionsJson: JSON.stringify(corrections),
       completedAt: new Date(),
     }).where(eq(uploadJobs.id, jobId));
 
@@ -183,20 +215,54 @@ async function processDistributionUpload(jobId: number, buffer: Buffer, userId: 
       rowsTotal: rawRows.length,
     }).where(eq(uploadJobs.id, jobId));
 
-    const { correctedRows, errors } = await selfHealExcelRows(rawRows, "distribution");
+    const { correctedRows, errors, corrections } = await selfHealExcelRows(rawRows, "distribution");
+
+    const correctedRowCount = new Set(corrections.map((c) => c.rowNumber)).size;
+
+    // Pre-pass: every referenced stock code must exist, otherwise the row is invalid.
+    for (let i = 0; i < correctedRows.length; i++) {
+      const rowNumber = i + 2;
+      const stockCode = String(correctedRows[i]["stock_code"] ?? "").toUpperCase();
+      if (!stockCode) continue; // already flagged as missing-required by selfHeal
+      const [stockRow] = await db
+        .select({ id: stocks.id })
+        .from(stocks)
+        .where(eq(stocks.stockCode, stockCode))
+        .limit(1);
+      if (!stockRow) {
+        errors.push({
+          rowNumber,
+          field: "stock_code",
+          errorType: "STOCK_NOT_FOUND",
+          message: `Stock code "${stockCode}" not found in system`,
+          value: stockCode,
+        });
+      }
+    }
+
+    // Reject the WHOLE upload if any row is invalid — nothing is imported.
+    if (errors.length > 0) {
+      const failedRowCount = new Set(errors.map((e) => e.rowNumber)).size;
+      await db.update(uploadJobs).set({
+        status: "failed",
+        rowsValid: 0,
+        rowsCorrected: correctedRowCount,
+        rowsFailed: failedRowCount,
+        errorReportJson: JSON.stringify(errors),
+        correctionsJson: JSON.stringify(corrections),
+        completedAt: new Date(),
+      }).where(eq(uploadJobs.id, jobId));
+      logger.info({ jobId, failedRowCount }, "Distribution upload rejected — invalid rows");
+      return;
+    }
 
     let rowsValid = 0;
-    let rowsCorrected = 0;
-    let rowsFailed = errors.length;
-
-    const errorRowNumbers = new Set(errors.map((e) => e.rowNumber));
+    let rowsFailed = 0;
+    const insertErrors: { rowNumber: number; field: string; errorType: string; message: string }[] = [];
 
     for (let i = 0; i < correctedRows.length; i++) {
       const rowNumber = i + 2;
-      if (errorRowNumbers.has(rowNumber)) continue;
-
       const row = correctedRows[i];
-      const isCorr = JSON.stringify(row) !== JSON.stringify(rawRows[i]);
 
       try {
         const stockCode = String(row["stock_code"] ?? row["Stock Code"] ?? "").toUpperCase();
@@ -205,17 +271,7 @@ async function processDistributionUpload(jobId: number, buffer: Buffer, userId: 
           .from(stocks)
           .where(eq(stocks.stockCode, stockCode))
           .limit(1);
-
-        if (!stockRow) {
-          rowsFailed++;
-          errors.push({
-            rowNumber,
-            field: "stock_code",
-            errorType: "STOCK_NOT_FOUND",
-            message: `Stock code "${stockCode}" not found in system`,
-          });
-          continue;
-        }
+        if (!stockRow) { rowsFailed++; continue; }
 
         const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
         const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -236,20 +292,24 @@ async function processDistributionUpload(jobId: number, buffer: Buffer, userId: 
         }).onConflictDoNothing();
 
         rowsValid++;
-        if (isCorr) rowsCorrected++;
-      } catch {
+      } catch (e) {
         rowsFailed++;
+        insertErrors.push({
+          rowNumber,
+          field: "stock_code",
+          errorType: "INSERT_FAILED",
+          message: e instanceof Error ? e.message : "Row could not be saved",
+        });
       }
     }
 
-    const errorReport = JSON.stringify(errors);
-
     await db.update(uploadJobs).set({
-      status: "completed",
+      status: rowsFailed > 0 ? "failed" : "completed",
       rowsValid,
-      rowsCorrected,
+      rowsCorrected: correctedRowCount,
       rowsFailed,
-      errorReportJson: errorReport,
+      errorReportJson: JSON.stringify(insertErrors),
+      correctionsJson: JSON.stringify(corrections),
       completedAt: new Date(),
     }).where(eq(uploadJobs.id, jobId));
 
