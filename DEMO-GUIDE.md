@@ -1,174 +1,247 @@
-# Mavericks Inventory — Demo Script
+# Mavericks Inventory — Exact Demo Script
 
-A clean, present-from-this-file guide. Each section = **what the page does** + **exact demo steps**. Whenever you must switch accounts, it's called out in **bold** at the top of the step.
-
----
-
-## 1. One-line pitch
-
-> **Mavericks Inventory** is an AI-assisted IT inventory & asset platform. It governs stock with a Maker-Checker (L1/L2) approval workflow, manages the full IT-asset lifecycle (request → approve → assign → audit → return), and uses AI to risk-score approvals, detect anomalies, auto-correct bulk uploads, and answer questions in plain English.
+**Legend:** 🗣️ = say this out loud · 👉 = click/do this · 🔐 = switch account
+**All passwords:** `DemoPass!123` · type the email manually.
 
 ---
 
-## 2. Login accounts (all password: `DemoPass!123`)
+## OPENING (at the login screen)
 
-> ⚠️ Type the email manually — use the addresses below.
+🗣️ "Good morning. This is **Mavericks Inventory** — an AI-assisted IT inventory and asset management platform. It does two things: it governs bulk stock through a Maker-Checker approval workflow, and it manages individual IT assets across their whole lifecycle — request, approve, assign, audit, and return. Throughout, AI is risk-scoring decisions, catching anomalies, cleaning up data, and answering questions in plain English. Let me walk you through it from each user's point of view."
 
-| Role | Email | Use it to show |
-|------|-------|----------------|
-| **Employee** | `employee@mavericks.com` | Requesting assets, photo audits, acknowledging receipt |
-| **Manager (L1)** | `manager@mavericks.com` | Approvals, anomalies, stock, reports, uploads |
-| **L2 Authority** | `l2@mavericks.com` | Final approval of escalated/high-value items |
-| **Admin** | `admin@mavericks.com` | System config, access control, reconciliation, legal holds |
+🗣️ "We have role-based access — an employee, an approving manager, a senior L2 authority, and a system admin. I'll start as a regular employee."
 
-**Demo order:** Employee → Manager → L2 → Admin. (Logout/login between acts; it's flagged in each act.)
+🔐 👉 Log in as `employee@mavericks.com`
 
 ---
 
-# ACT 1 — Employee  🔐 Login as `employee@mavericks.com`
+# ACT 1 — EMPLOYEE
 
-### Dashboard
-**What it does:** Personal overview — your requests, assigned assets, quick actions.
-**Steps:** Just point out the landing view, then go to the sidebar.
+## Dashboard
+🗣️ "This is the employee's home screen. It shows their own snapshot — assets assigned to them, the status of their requests, and quick actions. Everything an employee sees is scoped to just them."
 
-### Create Request  *(sidebar → Create Request)*
-**What it does:** Raise an IT asset request. AI reads your justification and suggests a priority.
-**Steps:**
-1. Pick a **Category** (e.g. Laptop) → sub-category auto-fills.
-2. Type what you need (e.g. "Dell Latitude laptop").
-3. In **"Why do you need this?"**, type a justification with intent, e.g. *"My current laptop is broken and I cannot work."*
-4. Watch the **AI suggest "Critical"** with the matched keywords — say *"the AI inferred urgency from the wording."*
-5. (Optional) override the priority manually. **Submit** → note the request code.
+## Sidebar → My Inventory  *(3 sub-tabs)*
+👉 Open **My Inventory**.
 
-### Submit Audit  *(sidebar → Submit Audit)*
-**What it does:** Photo-verify an assigned asset. Live-capture only (no uploads) with a tamper-proof timestamp watermark; AI verifies it.
-**Steps:**
-1. Select an asset → choose **Self Audit**.
-2. **This Device** → Open Camera → Capture (point at the asset tag). Show the **watermark** burned into the photo.
-3. (Optional) show **Scan with Phone** → a QR code opens a live camera on the phone, photo flows back automatically.
-4. **Submit** → it appears under **My Inventory → My Audits** with an AI status.
+🗣️ "My Inventory has three tabs."
 
-### My Requests  *(sidebar → My Requests)*
-**What it does:** Tracks every request through Submitted → Review → Decision → Fulfilled, and lets you **acknowledge receipt** once fulfilled.
-**Steps:**
-1. Open a **Fulfilled** request (there's a seeded/earlier one, or come back after Act 2).
-2. Click **"Acknowledge Receipt"** → it stamps **"Received"** and notifies the manager.
+👉 **My Assets tab**
+🗣️ "First, **My Assets** — every device and license assigned to me, with its condition, warranty, validity, and when its next audit is due. So an employee always knows what they're holding and what's expiring."
 
-> 💡 If nothing is fulfilled yet, do this at the very end after the manager fulfills a request in Act 2.
+👉 **My Requests tab**
+🗣️ "Second, **My Requests** — this tracks every request I've raised through its stages: submitted, under review, decision, fulfilled."
 
----
+👉 **My Audits tab**
+🗣️ "And third, **My Audits** — my history of asset photo-audits, each with the AI's verification result and confidence."
 
-# ACT 2 — Manager (L1)  🔐 Logout → Login as `manager@mavericks.com`
+## Sidebar → Create Request
+👉 Open **Create Request**.
+🗣️ "Now let me raise a request for a new device."
+👉 Pick **Category** (e.g. Laptop).
+🗣️ "I choose a category, and the sub-category options fill in automatically."
+👉 In *What do you need*, type: "Dell Latitude laptop".
+👉 In *Why do you need this*, type: **"My current laptop is broken and I cannot work."**
+🗣️ "Watch the priority field — as I describe my reason, the **AI reads the justification and suggests a priority.** Because I said 'broken' and 'cannot work', it's recommending **Critical**, and it shows me the exact keywords it picked up on. I can accept the AI's suggestion or override it manually."
+👉 **Submit Request.**
+🗣️ "Submitted — and it gives me a tracking code. My manager will be notified to review it."
 
-### Dashboard
-**What it does:** Approval-centric command center — pending queue size, anomalies, stock health charts, and **Approval Bottlenecks (>48h)**.
-**Steps:**
-1. Show the big **Pending Approvals** card and the **Stock Health** + **Available vs Required** charts (Available = blue, Required = amber).
-2. Click a row in **Approval Bottlenecks** → it **jumps straight to the Approval Workbench**, pre-filtered to that transaction.
+## Sidebar → Submit Audit
+👉 Open **Submit Audit**.
+🗣️ "Companies need to periodically verify assets are still in good condition and still with the right person. Here's how an employee does that."
+👉 Select an asset → choose **Self Audit**.
+👉 **This Device** → **Open Camera** → **Capture Photo** (aim at the asset).
+🗣️ "It's **live-capture only — no uploading old files** — and notice it burns a **timestamp watermark** into the photo, so it can't be faked. The AI then verifies the asset tag, checks condition, and confirms it matches our records."
+👉 (Optional) switch to **Scan with Phone**.
+🗣️ "If I'm away from my desk, I can generate a QR code, scan it with my phone, take the photo there, and it flows back here automatically."
+👉 **Submit Audit.**
+🗣️ "Submitted for AI analysis — the result shows up under My Audits."
 
-### Approval Workbench ⭐  *(sidebar → Approval Workbench)*
-**What it does:** The AI showpiece. Every distribution is risk-scored by AI with an Approve/Review/Reject recommendation. Low-risk items can be bulk-cleared (zero-touch); risky ones route to L2.
-**Steps:**
-1. Point out the **AI risk badge + recommendation + confidence** on each card, and the **SLA bar** (one item is SLA-breached).
-2. Tick the **low-risk** items → **Bulk Approve** (zero-touch). 
-3. On a single item, click **Approve** → a **confirmation dialog** appears (it no longer approves instantly) → **Confirm Approve**.
-4. On the **high-value / qty>50** item, click **Forward to L2** with a reason — *"this escalates to the L2 authority."*
-5. Tabs to mention: **Approval History** and **Zero-Touch Log**.
+## Sidebar → Stock Catalog
+👉 Open **Stock Catalog**.
+🗣️ "Employees can also browse the central stock catalog to see what's available before requesting."
 
-### Anomalies  *(sidebar → Anomalies)*
-**What it does:** AI-detected stock-health issues (low/zero stock, unusual velocity/volume) with plain-English explanations.
-**Steps:**
-1. Show the tab **counts** on All / Critical / Warning / Info.
-2. **Click a card** → a clean **detail view** opens with the full AI explanation and recommended action.
-3. From the detail view, **Acknowledge** it, then **Mark Resolved** (or **Dismiss**) — all actions live right there.
+🗣️ "That's the employee experience. Now let me switch to the manager who approves these."
 
-### Stock Master  *(sidebar → Stock Master)*
-**What it does:** Manage stock through its **Draft → Active → Inactive** lifecycle.
-**Steps:**
-1. On a **Draft** item → **Activate** → it moves to the **Active** tab.
-2. On an **Active** item → **Deactivate** → it moves to **Inactive** (and back via **Reactivate**).
-3. (Optional) click a stock code to show the movement history.
-
-### Asset Requests  *(sidebar → Asset Requests)*  ← fulfills the employee's request
-**What it does:** Review and fulfill employee asset requests.
-**Steps:**
-1. Open the employee's pending request → **Approve** (add a note).
-2. Then **Fulfill** → pick an available asset → assign. *(This is what the employee acknowledges in Act 1's last step.)*
-
-### Asset Registry  *(sidebar → Asset Registry)*
-**What it does:** Tracks individual IT assets and their assignment status.
-**Steps:**
-1. On an **Available** asset → **Assign** to an employee.
-2. Show **Return** on an assigned asset. *(If an asset is "assigned" but has no person, the button shows **Reset** and safely returns it to Available.)*
-
-### Reports  *(sidebar → Reports)*
-**What it does:** Generate and export operational reports.
-**Steps:**
-1. Pick **Current Stock Availability** → **Run Report**.
-2. Click **Export Excel** (downloads a spreadsheet) and **Export PDF** (opens a print-to-PDF view). *(Allow pop-ups for PDF.)*
-
-### Bulk Upload  *(sidebar → Bulk Upload)*
-**What it does:** Import stock/distributions from Excel with **AI self-healing** (auto-corrects messy data) and strict validation.
-**Steps:**
-1. Upload a file with a fixable issue (e.g. category `electronics`, lowercase code) → it imports and shows **AI Self-Healing Corrections** (original → corrected + reason).
-2. Upload a file with a genuinely bad row (missing required field / unknown stock code) → the **whole upload is rejected** (nothing saved) with the errors listed. *"Bad data never makes it in."*
+🔐 👉 Log out → Log in as `manager@mavericks.com`
 
 ---
 
-# ACT 3 — L2 Authority  🔐 Logout → Login as `l2@mavericks.com`
+# ACT 2 — MANAGER (L1 Approver)
 
-### Exception Queue  *(sidebar → Exception Queue)*
-**What it does:** Final sign-off for items L1 escalated (Server category, or qty over the threshold).
-**Steps:**
-1. Open the item the manager forwarded in Act 2.
-2. **Approve** → confirm in the dialog. Mention **Zero-Touch Log** shows what AI cleared without humans.
+## Dashboard
+🗣️ "The manager lands on a very different, approval-focused dashboard. Right at the top is the **pending approvals** count with average processing time. Below that, live **stock-health** charts."
+👉 Point to the **Available vs Required** chart.
+🗣️ "This compares what we have on hand — in blue — against the minimum we need to keep — in amber — so shortfalls are obvious at a glance."
+👉 Point to **Approval Bottlenecks (>48h)** and click a row.
+🗣️ "And anything stuck for more than 48 hours surfaces here as a bottleneck. If I click one, it takes me **straight into the approval queue, pre-filtered to that item** — so I can act immediately."
+
+## Sidebar → Approval Workbench  ⭐ *(main highlight)*
+🗣️ "This is the heart of the system — the Approval Workbench. Every request to move stock lands here, and **the AI has already analyzed each one.**"
+👉 Point to a card's badges.
+🗣️ "For each item, AI gives a **risk level**, a **recommendation** — approve, review, or reject — its **confidence**, and the reasoning. There's also an SLA bar; this one in red has already breached its deadline."
+
+🗣️ "For the safe, low-risk requests, I don't need to touch each one."
+👉 Tick a few **low-risk** items → **Bulk Approve.**
+🗣️ "I select the low-risk items and **bulk-approve** them in one click — that's our zero-touch automation. AI clears the routine work so humans focus on the exceptions."
+
+👉 On one item click **Approve** → confirmation dialog appears → **Confirm Approve.**
+🗣️ "When I approve an individual item, it now asks me to **confirm first** — so nothing gets committed by an accidental click."
+
+👉 On the high-value / large-quantity item click **Forward to L2** → add a reason.
+🗣️ "This one is high-value, so policy says it needs a second signature. I **forward it to the L2 authority** with a note — that's the Maker-Checker control."
+
+🗣️ "The workbench also has history tabs."
+👉 Mention **Approval History** and **Zero-Touch Log** (sidebar).
+🗣️ "**Approval History** is every decision we've made, and the **Zero-Touch Log** shows exactly what the AI auto-cleared without any human review — full transparency."
+
+## Sidebar → Anomalies  *(tabs: All / Critical / Warning / Info)*
+👉 Open **Anomalies**.
+🗣️ "Separately, an anomaly engine watches stock health around the clock. It flags things like items below minimum, zero stock, or unusual consumption."
+👉 Point to the tab counts.
+🗣️ "They're grouped by severity — **Critical, Warning, Info** — with counts on each tab."
+👉 Click a card → detail view opens.
+🗣️ "If I click one, I get a clear detail view with the **AI's plain-English explanation** and a recommended action."
+👉 In the detail → **Acknowledge**, then **Mark Resolved** (or **Dismiss**).
+🗣️ "And right from here I can **acknowledge** it, **mark it resolved** with notes, or **dismiss** it — every action is logged for audit."
+
+## Sidebar → Stock Master  *(tabs: Draft / Active / Inactive)*
+👉 Open **Stock Master**.
+🗣️ "This is our stock catalog with a full lifecycle — **Draft, Active, Inactive**."
+👉 On a **Draft** item → **Activate** → switch to **Active** tab.
+🗣️ "I can take a draft item and **activate** it — and it immediately moves into the Active tab."
+👉 On an **Active** item → **Deactivate** → show **Inactive** tab.
+🗣️ "And I can **deactivate** something to archive it — it moves to Inactive, and can be reactivated later. Nothing is ever hard-deleted."
+👉 (Optional) click a stock code.
+🗣️ "Clicking any item shows its full movement history."
+
+## Sidebar → Stock Ledger
+👉 Open **Stock Ledger**.
+🗣️ "The Stock Ledger is our immutable audit trail — every stock movement in and out, with running balances. It exports to CSV for finance."
+
+## Sidebar → Distributions
+👉 Open **Distributions**.
+🗣️ "This is the full list of stock distributions with their status, risk, and AI recommendation — filterable by status or risk."
+
+## Sidebar → Asset Requests  *(this fulfills the employee's request)*
+👉 Open **Asset Requests**.
+🗣️ "Here's where I handle the request the employee raised earlier."
+👉 Open the pending request → **Approve** (add a note).
+🗣️ "I review the justification and **approve** it."
+👉 Then **Fulfill** → pick an available asset → assign.
+🗣️ "Then I **fulfill** it by assigning a specific physical asset from inventory. The employee is notified instantly."
+
+## Sidebar → Asset Registry
+👉 Open **Asset Registry**.
+🗣️ "The Asset Registry tracks every individual device — laptops, monitors, phones, licenses — by status: available, assigned, maintenance, retired."
+👉 On an **Available** asset → **Assign**.
+🗣️ "I can assign an available asset to an employee."
+👉 Point to an assigned asset's **Return** / **Reset** button.
+🗣️ "And return it when it comes back. The system also self-heals — if an asset is marked assigned but has no actual owner, it gives me a Reset to put it safely back in stock."
+
+## Sidebar → Employees
+👉 Open **Employees**.
+🗣️ "I can browse employees and drill into any one to see every asset they hold and what's due for audit."
+
+## Sidebar → AI Insights
+👉 Open **AI Insights**.
+🗣️ "This is our natural-language analytics. There's an **AI health score** for the whole inventory, and I can **ask questions in plain English** — like 'which items are below minimum stock level' — and get an answer with the data behind it."
+👉 (Optional) click a suggested query.
+
+## Sidebar → Reports
+👉 Open **Reports**.
+🗣️ "We have a library of operational reports on the left."
+👉 Pick **Current Stock Availability** → **Run Report**.
+🗣️ "I pick one, run it, and then **export to Excel or PDF**."
+👉 Click **Export Excel**, then **Export PDF**.
+🗣️ "Excel downloads a spreadsheet; PDF opens a print-ready view to save."
+
+## Sidebar → Audit Log
+👉 Open **Audit Log**.
+🗣️ "Every action in the system — logins, approvals, edits — is recorded here as a searchable, filterable audit trail for compliance."
+
+## Sidebar → Bulk Upload  *(tabs: Stock Master Upload / Distribution Upload)*
+👉 Open **Bulk Upload**.
+🗣️ "For onboarding data in bulk, we upload Excel — and this is where AI really helps."
+👉 Upload a file with a fixable issue (lowercase code, wrong category casing).
+🗣️ "When the data is messy, the **AI self-heals it** — here it's standardized the category and the codes — and it shows me exactly what it changed and why."
+👉 Upload a file with a bad row (missing field / unknown stock code).
+🗣️ "But if a row has genuinely invalid data, the system **rejects the entire upload** and lists the errors — nothing bad ever gets saved."
+
+🗣️ "That covers the manager. Now the high-value item I escalated needs the L2 authority."
+
+🔐 👉 Log out → Log in as `l2@mavericks.com`
 
 ---
 
-# ACT 4 — Admin  🔐 Logout → Login as `admin@mavericks.com`
+# ACT 3 — L2 AUTHORITY
 
-### System Admin  *(sidebar → System Admin)*
-**What it does:** Central configuration. Tabs: **Users, Access Control, Catalog, System Health, Configuration, AI Policy, Workflows, Monitoring**.
-**Steps:**
-1. **Access Control** — pick a role, toggle a sidebar item's visibility, **Save** → *"controls what each role sees."*
-2. **Configuration** — show the L2 quantity threshold and SLA settings.
-3. **System Health** — service status + the >48h bottleneck alert.
+## Dashboard
+🗣️ "The L2 authority is the senior approver — they only see the exceptions that need a second signature."
 
-### Reports → User Activity Summary  *(Reports → User Activity Summary)*
-**What it does:** A **per-user activity summary** (events, distributions, approvals, last active) — distinct from the raw Audit Log.
-**Steps:** Run it and contrast with **Audit Log** (sidebar), which is the raw chronological event trail.
+## Sidebar → Exception Queue  *(tabs: Override History / Zero-Touch Log / Anomalies)*
+👉 Open **Exception Queue**.
+🗣️ "Here's the item the manager escalated. The same AI analysis is in front of me."
+👉 Open it → **Approve** → **Confirm.**
+🗣️ "I give the final approval, and only now does the stock actually move and the ledger record it."
+👉 Mention **Override History** and **Zero-Touch Log**.
+🗣️ "L2 also has an **Override History** — any time a human decision overruled the AI — and the **Zero-Touch Log** of everything auto-cleared. Full accountability at the top."
 
-### Reconciliation  *(sidebar → Reconciliation)*
-**What it does:** Compare physical counts vs system records and flag variances.
-**Steps:** Show the variance rows and the **Create Adjustment** action.
+🗣️ "Finally, let me show the administrator's view."
 
-### Legal Holds  *(sidebar → Legal Holds)*
-**What it does:** Lock records for compliance/litigation.
-**Steps:** Open **New Legal Hold**, show scope options, mention records get locked from change.
+🔐 👉 Log out → Log in as `admin@mavericks.com`
 
 ---
 
-# ACT 5 — Close the loop  🔐 Logout → Login as `employee@mavericks.com`
+# ACT 4 — ADMIN
 
-1. Go to **My Requests** → the request the manager fulfilled now shows **Acknowledge Receipt**.
-2. Click it → **"Received"** stamp appears. *"Full lifecycle closed — request to acknowledged receipt."*
+## Sidebar → System Admin  *(8 tabs)*
+👉 Open **System Admin**.
+🗣️ "The admin console runs the whole platform. There are eight areas."
+👉 **Users tab** — 🗣️ "Create users, set roles, activate or deactivate accounts."
+👉 **Access Control tab** — pick a role, toggle a sidebar item, **Save.** 🗣️ "I control exactly which menu items each role can see — and it applies on their next login."
+👉 **Catalog tab** — 🗣️ "Manage the master lists — categories, units of measure, locations."
+👉 **System Health tab** — 🗣️ "Live service status and any approval bottlenecks."
+👉 **Configuration tab** — 🗣️ "Business rules — the L2 quantity threshold and the SLA timers that drive escalation."
+👉 **AI Policy tab** — 🗣️ "Tune anomaly sensitivity and see which AI features are active."
+👉 **Workflows tab** — 🗣️ "The approval routing rules and the stages a request passes through."
+👉 **Monitoring tab** — 🗣️ "Real-time system metrics."
+
+## Sidebar → Reports → User Activity Summary
+👉 Open **Reports** → **User Activity Summary**.
+🗣️ "For admins there's a **per-user activity summary** — how many events, distributions, and approvals each person has done, and when they were last active. That's different from the raw Audit Log, which is the full chronological event trail."
+
+## Sidebar → Reconciliation
+👉 Open **Reconciliation**.
+🗣️ "Reconciliation compares physical stock counts against system records and flags variances, so we can create adjustments and keep the books accurate."
+
+## Sidebar → Legal Holds
+👉 Open **Legal Holds**.
+🗣️ "And for compliance, admins can place a **legal hold** — locking a set of records so they can't be changed or deleted during an investigation."
+
+🗣️ "Let me close the loop back on the employee side."
+
+🔐 👉 Log out → Log in as `employee@mavericks.com`
 
 ---
 
-## 3. AI talking points (say these during Act 2)
+# ACT 5 — CLOSE THE LOOP (EMPLOYEE)
 
-- **Risk Analysis** scores every distribution → drives auto-approve vs escalate.
-- **Anomaly engine** watches stock health 24/7 and explains each alert in plain English.
-- **Self-healing upload** auto-corrects messy spreadsheets and rejects bad data.
-- **Ask Inventory** (AI Insights) answers questions in plain English + a health score.
-- *"AI scores it, a Maker-Checker L1/L2 workflow governs it, an anomaly engine watches it, and an immutable ledger records it — the system runs itself and only escalates exceptions to humans."*
+👉 Open **My Requests**.
+🗣️ "Remember the request I raised at the start — the manager has now approved and fulfilled it. The employee gets to confirm they actually received the asset."
+👉 Click **Acknowledge Receipt** → "Received" stamp appears.
+🗣️ "I acknowledge receipt, and the request is fully closed — from the first request all the way to confirmed delivery."
 
 ---
 
-## 4. Pre-demo checklist
-- [ ] Backend + frontend running; logged out to start at the login screen.
-- [ ] Approval Workbench has pending items (seeded). If empty, run `cd src/backend && npx tsx src/db/seed-approvals.ts`.
-- [ ] Browser pop-ups allowed (for PDF export).
-- [ ] Have a clean Excel file and a "bad" Excel file ready for the Bulk Upload demo.
-- [ ] Camera permission allowed (for the photo-audit step).
+# CLOSING
+
+🗣️ "So to summarize: every stock movement is **risk-scored by AI**, governed by a **Maker-Checker L1/L2 workflow**, continuously watched by an **anomaly engine**, and recorded in an **immutable ledger** — while employees self-serve requests and audits. The platform automates the routine and escalates only the exceptions to people. Thank you — happy to take questions."
+
+---
+
+## Pre-demo checklist
+- [ ] Backend + frontend running; start logged out at the login screen.
+- [ ] Approval Workbench has pending items. If empty: `cd src/backend && npx tsx src/db/seed-approvals.ts`
+- [ ] Browser pop-ups allowed (PDF export) and camera allowed (photo audit).
+- [ ] One clean Excel file + one "bad" Excel file ready for Bulk Upload.
 </content>
